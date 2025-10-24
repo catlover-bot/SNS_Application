@@ -1,0 +1,15 @@
+node_modules/
+.pnp/
+.pnp.js
+.expo/
+/.expo-shared/
+.DS_Store
+.vscode/
+.idea/
+dist/
+build/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+# lockfiles (keep pnpm lock if desired)
+# package-lock.json
