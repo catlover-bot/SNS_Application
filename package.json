@@ -1,0 +1,29 @@
+{
+  "name": "sns-application",
+  "private": true,
+  "packageManager": "pnpm@10.19.0",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "dev:web": "pnpm -C apps/web dev",
+    "dev:mobile": "pnpm -C apps/mobile start",
+    "clean": "pnpm -C apps/web run clean || exit 0 && pnpm -C packages/core run clean || exit 0"
+  },
+  "devDependencies": {
+    "turbo": "^2.1.0",
+    "typescript": "^5.6.3"
+  },
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/catlover-bot/SNS_Application.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": { "url": "https://github.com/catlover-bot/SNS_Application/issues" },
+  "homepage": "https://github.com/catlover-bot/SNS_Application#readme"
+}
