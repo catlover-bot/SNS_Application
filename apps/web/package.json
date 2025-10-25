@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "cross-env NEXT_DISABLE_TURBOPACK=1 next dev",
-    "build": "next build",
+    "build": "pnpm -w --filter @sns/core run build && next build",
     "start": "next start",
     "clean": "node -e \"try{require('fs').rmSync('.next',{recursive:true,force:true})}catch{};try{require('fs').rmSync('.turbo',{recursive:true,force:true})}catch{}\""
   },
