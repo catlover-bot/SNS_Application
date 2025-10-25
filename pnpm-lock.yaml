@@ -52,7 +52,7 @@ importers:
   apps/web:
     dependencies:
       '@sns/core':
-        specifier: workspace:*
+        specifier: link:../../packages/core
         version: link:../../packages/core
       '@supabase/auth-helpers-nextjs':
         specifier: 0.10.0
