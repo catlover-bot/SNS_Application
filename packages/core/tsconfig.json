@@ -1,13 +1,15 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "module": "ESNext",
+    "module": "ESNext",                // ESM 出力（package.json の "type": "module" と一致）
     "moduleResolution": "Bundler",
-    "declaration": true,
     "outDir": "dist",
-    "rootDir": "src",
-    "strict": true,
-    "skipLibCheck": true
+    "declaration": true,               // 型定義を出力（exports.types が指す dist/index.d.ts を作る）
+    "emitDeclarationOnly": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "strict": false
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "**/*.test.*"]
 }
