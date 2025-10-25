@@ -9,6 +9,7 @@ import { computeLieScore } from "@sns/core";
 export default function ThreadPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
+
   const [post, setPost] = useState<any | null>(null);
   const [replies, setReplies] = useState<any[]>([]);
   const [text, setText] = useState("");
@@ -16,24 +17,40 @@ export default function ThreadPage() {
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
+    let alive = true;
+
+    // 初回ロード
     (async () => {
       const { data: p } = await supabase.from("posts").select("*").eq("id", id).single();
-      setPost(p ?? null);
+      if (alive) setPost(p ?? null);
+
       const { data: rs } = await supabase
         .from("posts")
         .select("*")
         .eq("reply_to", id)
         .order("created_at", { ascending: true });
-      setReplies(rs ?? []);
+
+      if (alive) setReplies(rs ?? []);
     })();
 
+    // 返信のリアルタイム受信
     const ch = supabase
-      .channel("thread-"+id)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "posts", filter: `reply_to=eq.${id}` },
-        (payload) => setReplies((prev) => [...prev, payload.new as any])
+      .channel(`thread-${id}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "posts", filter: `reply_to=eq.${id}` },
+        (payload) => {
+          if (alive) setReplies((prev) => [...prev, payload.new as any]);
+        }
       )
       .subscribe();
-    return () => supabase.removeChannel(ch);
+
+    // 👇 Promiseを返さないクリーンアップにする（voidを付ける or ブロックにする）
+    return () => {
+      alive = false;
+      void supabase.removeChannel(ch); // ← これで戻り値（Promise）を“捨てる”
+      // もしくは: void ch.unsubscribe();
+    };
   }, [id]);
 
   function onChange(v: string) {
@@ -45,6 +62,7 @@ export default function ThreadPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { location.href = `/login?next=/p/${id}`; return; }
     if (!text.trim() || sending) return;
+
     setSending(true);
     const { error } = await supabase.from("posts").insert({ text, score, reply_to: id });
     if (!error) setText("");
@@ -71,7 +89,11 @@ export default function ThreadPage() {
         />
         <div className="flex items-center justify-between text-sm opacity-70 mt-1">
           <div>嘘っぽさ {(score*100).toFixed(1)}%</div>
-          <button onClick={reply} disabled={sending || !text.trim()} className="px-3 py-1 rounded bg-blue-600 text-white disabled:opacity-50">
+          <button
+            onClick={reply}
+            disabled={sending || !text.trim()}
+            className="px-3 py-1 rounded bg-blue-600 text-white disabled:opacity-50"
+          >
             返信する
           </button>
         </div>
