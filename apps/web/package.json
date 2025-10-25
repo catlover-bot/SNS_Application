@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "cross-env NEXT_DISABLE_TURBOPACK=1 next dev",
-    "prebuild": "pnpm -C ../../ --filter @sns/core run build",
+    "prebuild": "pnpm -C ../../packages/core run build",
     "build": "next build",
     "start": "next start",
     "clean": "node -e \"try{require('fs').rmSync('.next',{recursive:true,force:true})}catch{};try{require('fs').rmSync('.turbo',{recursive:true,force:true})}catch{}\""
@@ -21,7 +21,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@sns/core": "workspace:*",
+    "@sns/core": "link:../../packages/core",
     "@supabase/auth-helpers-nextjs": "0.10.0",
     "@supabase/supabase-js": "^2.76.1",
     "exifr": "^7.1.3",
