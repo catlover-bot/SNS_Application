@@ -1,36 +1,74 @@
 // apps/web/src/app/personas/page.tsx
-import { PERSONA_BANDS } from "@/lib/persona";
+export const revalidate = 3600;
 
-export const metadata = { title: "キャラ図鑑 | 嘘スコアSNS" };
+import Link from "next/link";
+import { Suspense } from "react";
+import { headers } from "next/headers";
 
-export default function PersonasPage() {
+type Item = {
+  key: string;
+  title: string;
+  blurb: string | null;
+  image_url?: string | null;
+  theme?: string | null;
+};
+
+async function fetchCatalog(): Promise<Item[]> {
+  // Server Component では相対URL不可。ヘッダから絶対URLを作る
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host");
+  const proto = h.get("x-forwarded-proto") ?? "http";
+  if (!host) throw new Error("failed to detect host");
+
+  const origin = `${proto}://${host}`;
+  const res = await fetch(`${origin}/api/personas`, {
+    next: { revalidate: 3600, tags: ["personas"] },
+  });
+  if (!res.ok) throw new Error("failed to load personas");
+  return res.json();
+}
+
+const imgSrcFor = (key: string) => `/persona-images/${encodeURIComponent(key)}.png`;
+
+export default function PersonasCatalogPage() {
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold">キャラ図鑑</h1>
-      <p className="opacity-70">
-        各ユーザーの「平均 嘘っぽさ」からキャラクターを割り当てます。スコアは投稿の文体・語彙・記号の使い方などの
-        ヒューリスティックに基づく<span className="underline">参考指標</span>です。
-      </p>
+    <div className="max-w-6xl mx-auto p-6">
+      <h1 className="text-2xl font-bold mb-4">キャラ図鑑</h1>
+      <Suspense fallback={<div>読み込み中…</div>}>
+        <CatalogContent />
+      </Suspense>
+    </div>
+  );
+}
 
-      <div className="grid md:grid-cols-2 gap-4">
-        {PERSONA_BANDS.map((b) => (
-          <div key={b.key} className={`p-4 rounded border ${b.colorClass}`}>
-            <div className="flex items-center gap-2 text-lg font-semibold">
-              <span>{b.emoji}</span>
-              <span>{b.label}</span>
-              <span className="text-xs ml-2 opacity-70">
-                しきい値: {b.minPct}% – {b.maxPct}%
-              </span>
-            </div>
-            <div className="mt-2">{b.tip}</div>
-            <div className="mt-1 opacity-70 text-sm">{b.long}</div>
+async function CatalogContent() {
+  const items = await fetchCatalog();
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {items.map((r) => (
+        <Link
+          key={r.key}
+          href={`/personas/${encodeURIComponent(r.key)}`}
+          className="group block rounded-2xl border bg-white overflow-hidden hover:shadow-md transition"
+        >
+          {/* 画像は /public/persona-images/<key>.png を参照 */}
+          <div className="w-full aspect-square flex items-center justify-center bg-white">
+            <img
+              src={imgSrcFor(r.key)}
+              alt={r.title}
+              className="w-full h-full object-cover"
+              loading="lazy"
+            />
           </div>
-        ))}
-      </div>
 
-      <div className="opacity-60 text-sm">
-        ※ スコアは最終的な真偽を断定するものではありません。通報や投票機能と組み合わせ、コミュニティで検証していきます。
-      </div>
+          <div className="p-4">
+            <div className="text-base font-semibold group-hover:underline">{r.title}</div>
+            <div className="text-xs opacity-60">@{r.key}</div>
+            <p className="text-sm opacity-80 mt-1 line-clamp-3">{r.blurb ?? ""}</p>
+          </div>
+        </Link>
+      ))}
     </div>
   );
 }
