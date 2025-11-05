@@ -1,5 +1,6 @@
 // apps/web/src/app/personas/page.tsx
-export const revalidate = 3600;
+export const dynamic = "force-dynamic"; // ← 事前レンダリングをさせない
+export const revalidate = 0;
 
 import Link from "next/link";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -12,9 +13,7 @@ type Item = {
   theme?: string | null;
 };
 
-const imgSrcFor = (key: string) => `/persona-images/${encodeURIComponent(key)}.png`;
-
-export default async function PersonasCatalogPage() {
+async function getCatalog(): Promise<Item[]> {
   const supa = await supabaseServer();
   const { data, error } = await supa
     .from("persona_archetype_defs")
@@ -22,54 +21,42 @@ export default async function PersonasCatalogPage() {
     .order("title", { ascending: true });
 
   if (error) {
-    return (
-      <div className="max-w-6xl mx-auto p-6">
-        <h1 className="text-2xl font-bold mb-4">キャラ図鑑</h1>
-        <div className="rounded border bg-red-50 text-red-700 p-4 text-sm">
-          キャラ一覧の取得に失敗しました: {error.message}
-        </div>
-      </div>
-    );
+    console.error("[/personas] supabase error:", error.message);
+    return [];
   }
+  return data ?? [];
+}
 
-  const items: Item[] = data ?? [];
+export default async function PersonasCatalogPage() {
+  const items = await getCatalog();
 
   return (
     <div className="max-w-6xl mx-auto p-6">
       <h1 className="text-2xl font-bold mb-4">キャラ図鑑</h1>
 
       {items.length === 0 ? (
-        <div className="opacity-70 text-sm">登録済みのキャラが見つかりませんでした。</div>
+        <div className="text-sm opacity-70">
+          キャラ一覧の取得に失敗したか、データがありません。
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {items.map((r) => {
-            const primary = r.image_url || imgSrcFor(r.key);
-            const fallback = imgSrcFor(r.key);
-            const placeholder = "/persona-images/_placeholder.png";
-
+            const src =
+              r.image_url || `/persona-images/${encodeURIComponent(r.key)}.png`;
             return (
               <Link
                 key={r.key}
                 href={`/personas/${encodeURIComponent(r.key)}`}
                 className="group block rounded-2xl border bg-white overflow-hidden hover:shadow-md transition"
               >
-                <div className="relative w-full aspect-square bg-white">
+                {/* Server Component なので onError 等のイベントハンドラは付けない */}
+                <div className="w-full aspect-square flex items-center justify-center bg-white">
                   <img
-                    src={primary}
+                    src={src}
                     alt={r.title}
                     loading="lazy"
                     decoding="async"
-                    width={768}
-                    height={768}
-                    className="absolute inset-0 w-full h-full object-contain"
-                    onError={(e) => {
-                      const img = e.currentTarget as HTMLImageElement;
-                      if (img.src.endsWith(primary) && primary !== fallback) {
-                        img.src = fallback;
-                      } else {
-                        img.src = placeholder;
-                      }
-                    }}
+                    className="w-full h-full object-contain"
                   />
                 </div>
 
@@ -78,7 +65,9 @@ export default async function PersonasCatalogPage() {
                     {r.title}
                   </div>
                   <div className="text-xs opacity-60">@{r.key}</div>
-                  <p className="text-sm opacity-80 mt-1 line-clamp-3">{r.blurb ?? ""}</p>
+                  <p className="text-sm opacity-80 mt-1 line-clamp-3">
+                    {r.blurb ?? ""}
+                  </p>
                 </div>
               </Link>
             );

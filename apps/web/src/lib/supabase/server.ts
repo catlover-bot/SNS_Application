@@ -3,25 +3,26 @@ import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-/** 呼び出し側で await して使ってください（トップレベルで呼ばない） */
+/**
+ * Next.js のバージョン差で cookies() が sync/async の両パターンがある。
+ * どちらでも動くように吸収してから Supabase クライアントを返す。
+ */
 export async function supabaseServer(): Promise<SupabaseClient> {
-  const bag = await cookies(); // ✅ await 必須
+  // cookies() が Promise の場合と、同期オブジェクトの場合を両対応
+  const maybe = cookies() as any;
+  const bag = typeof maybe?.then === "function" ? await maybe : maybe;
 
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return bag.get(name)?.value ?? null;
-        },
-        set() {
-          /* 必要になったら NextResponse で実装 */
-        },
-        remove() {
-          /* 必要になったら NextResponse で実装 */
-        },
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+  return createServerClient(url, anon, {
+    cookies: {
+      get(name: string) {
+        return bag.get(name)?.value ?? null;
       },
-    }
-  );
+      // このモジュールでは読み取り専用で十分
+      set() {},
+      remove() {},
+    },
+  });
 }
