@@ -3,7 +3,7 @@ export const revalidate = 3600;
 
 import Link from "next/link";
 import { Suspense } from "react";
-import { headers } from "next/headers";
+import { supabaseServer } from "@/lib/supabase/server";
 
 type Item = {
   key: string;
@@ -14,21 +14,24 @@ type Item = {
 };
 
 async function fetchCatalog(): Promise<Item[]> {
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host");
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  if (!host) throw new Error("failed to detect host");
+  // ✅ API 経由をやめ、サーバーで Supabase を直読みに変更
+  const supa = await supabaseServer();
+  const { data, error } = await supa
+    .from("persona_archetype_defs")
+    .select("key,title,blurb,image_url,theme")
+    .order("title", { ascending: true });
 
-  const origin = `${proto}://${host}`;
-  const res = await fetch(`${origin}/api/personas`, {
-    next: { revalidate: 3600, tags: ["personas"] },
-  });
-  if (!res.ok) {
-    // ここでエラーメッセージも拾っておくと原因追跡しやすい
-    const txt = await res.text().catch(() => "");
-    throw new Error(`failed to load personas: ${res.status} ${txt}`);
+  if (error) {
+    // ログも残す
+    console.error("[/personas] fetchCatalog error:", {
+      message: error.message,
+      code: (error as any).code,
+      details: (error as any).details,
+      hint: (error as any).hint,
+    });
+    throw new Error(error.message);
   }
-  return res.json();
+  return (data ?? []) as Item[];
 }
 
 const imgSrcFor = (key: string) => `/persona-images/${encodeURIComponent(key)}.png`;
@@ -49,7 +52,6 @@ async function CatalogContent() {
   try {
     items = await fetchCatalog();
   } catch (e: any) {
-    // 失敗時もページは生かしておく
     return (
       <div className="rounded border p-4 bg-white text-sm text-red-600">
         キャラ一覧の取得に失敗しました：{e?.message ?? "unknown error"}
@@ -77,6 +79,7 @@ async function CatalogContent() {
               }}
             />
           </div>
+
           <div className="p-4">
             <div className="text-base font-semibold group-hover:underline">{r.title}</div>
             <div className="text-xs opacity-60">@{r.key}</div>
