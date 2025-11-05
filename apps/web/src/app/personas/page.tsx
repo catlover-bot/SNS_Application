@@ -3,7 +3,7 @@ export const revalidate = 3600;
 
 import Link from "next/link";
 import { Suspense } from "react";
-import { supabaseServer } from "@/lib/supabase/server";
+import { headers } from "next/headers";
 
 type Item = {
   key: string;
@@ -14,27 +14,26 @@ type Item = {
 };
 
 async function fetchCatalog(): Promise<Item[]> {
-  // ✅ API 経由をやめ、サーバーで Supabase を直読みに変更
-  const supa = await supabaseServer();
-  const { data, error } = await supa
-    .from("persona_archetype_defs")
-    .select("key,title,blurb,image_url,theme")
-    .order("title", { ascending: true });
+  // Server Component では相対URL不可。ヘッダから絶対URLを作る
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host");
+  const proto = h.get("x-forwarded-proto") ?? "http";
+  if (!host) throw new Error("failed to detect host");
 
-  if (error) {
-    // ログも残す
-    console.error("[/personas] fetchCatalog error:", {
-      message: error.message,
-      code: (error as any).code,
-      details: (error as any).details,
-      hint: (error as any).hint,
-    });
-    throw new Error(error.message);
+  const origin = `${proto}://${host}`;
+  const res = await fetch(`${origin}/api/personas`, {
+    next: { revalidate: 3600, tags: ["personas"] },
+  });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`failed to load personas: ${res.status} ${txt}`);
   }
-  return (data ?? []) as Item[];
+  return res.json();
 }
 
-const imgSrcFor = (key: string) => `/persona-images/${encodeURIComponent(key)}.png`;
+const imgSrcFor = (key: string) =>
+  `/persona-images/${encodeURIComponent(key)}.png`;
 
 export default function PersonasCatalogPage() {
   return (
@@ -48,16 +47,7 @@ export default function PersonasCatalogPage() {
 }
 
 async function CatalogContent() {
-  let items: Item[] = [];
-  try {
-    items = await fetchCatalog();
-  } catch (e: any) {
-    return (
-      <div className="rounded border p-4 bg-white text-sm text-red-600">
-        キャラ一覧の取得に失敗しました：{e?.message ?? "unknown error"}
-      </div>
-    );
-  }
+  const items = await fetchCatalog();
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -67,6 +57,7 @@ async function CatalogContent() {
           href={`/personas/${encodeURIComponent(r.key)}`}
           className="group block rounded-2xl border bg-white overflow-hidden hover:shadow-md transition"
         >
+          {/* 画像は /public/persona-images/<key>.png を参照 */}
           <div className="w-full aspect-square flex items-center justify-center bg-white">
             <img
               src={imgSrcFor(r.key)}
@@ -81,9 +72,13 @@ async function CatalogContent() {
           </div>
 
           <div className="p-4">
-            <div className="text-base font-semibold group-hover:underline">{r.title}</div>
+            <div className="text-base font-semibold group-hover:underline">
+              {r.title}
+            </div>
             <div className="text-xs opacity-60">@{r.key}</div>
-            <p className="text-sm opacity-80 mt-1 line-clamp-3">{r.blurb ?? ""}</p>
+            <p className="text-sm opacity-80 mt-1 line-clamp-3">
+              {r.blurb ?? ""}
+            </p>
           </div>
         </Link>
       ))}
