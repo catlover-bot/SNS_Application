@@ -1,5 +1,5 @@
 // apps/web/src/app/personas/page.tsx
-export const dynamic = "force-dynamic"; // ← 事前レンダリングをさせない
+export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import Link from "next/link";
@@ -9,7 +9,8 @@ type Item = {
   key: string;
   title: string;
   blurb: string | null;
-  image_url?: string | null;
+  // image_url は使わない
+  // image_url?: string | null;
   theme?: string | null;
 };
 
@@ -17,7 +18,7 @@ async function getCatalog(): Promise<Item[]> {
   const supa = await supabaseServer();
   const { data, error } = await supa
     .from("persona_archetype_defs")
-    .select("key,title,blurb,image_url,theme")
+    .select("key,title,blurb,theme")
     .order("title", { ascending: true });
 
   if (error) {
@@ -41,15 +42,17 @@ export default async function PersonasCatalogPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {items.map((r) => {
-            const src =
-              r.image_url || `/persona-images/${encodeURIComponent(r.key)}.png`;
+            // 常にローカルPNGを参照
+            const src = `/persona-images/${encodeURIComponent(r.key)}.png`;
+            const placeholder = "/persona-images/_placeholder.png";
+
             return (
               <Link
                 key={r.key}
                 href={`/personas/${encodeURIComponent(r.key)}`}
                 className="group block rounded-2xl border bg-white overflow-hidden hover:shadow-md transition"
               >
-                {/* Server Component なので onError 等のイベントハンドラは付けない */}
+                {/* Server Component なのでイベントハンドラは付けない */}
                 <div className="w-full aspect-square flex items-center justify-center bg-white">
                   <img
                     src={src}
@@ -57,6 +60,12 @@ export default async function PersonasCatalogPage() {
                     loading="lazy"
                     decoding="async"
                     className="w-full h-full object-contain"
+                    // フォールバックは nginx/edge が 404 を返した場合の
+                    // ブラウザ再要求に任せるのが基本だが、ここでは
+                    // 画像欠落時の視覚崩れを防ぐため 404 を placeholder に置き換えるため、
+                    // `onError` を使いたくなる。ただし Server Component では不可。
+                    // → 代替として public 側で 404 を _placeholder.png に張り替える案もあるが、
+                    //   まずはファイルを用意しておけば OK（ローカルPNG揃ってるなら出ます）
                   />
                 </div>
 
