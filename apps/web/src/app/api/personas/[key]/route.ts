@@ -2,11 +2,8 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 
-type Ctx = { params: Promise<{ key: string }> };
-
-export async function GET(_req: Request, ctx: Ctx) {
-  const { key } = await ctx.params;
-
+export async function GET(_req: Request, ctx: { params: { key: string } }) {
+  const { key } = ctx.params;
   const supa = await supabaseServer();
 
   const { data: persona, error } = await supa
