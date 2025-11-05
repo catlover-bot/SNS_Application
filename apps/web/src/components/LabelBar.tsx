@@ -1,7 +1,8 @@
+// apps/web/src/components/LabelBar.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabaseClient } from "@/lib/supabase/client";
 
 type LabelKey = "funny" | "insight" | "toxic" | "question" | "sarcasm";
 
@@ -16,6 +17,8 @@ const CATALOG: { key: LabelKey; emoji: string; text: string }[] = [
 type Props = { postId: string };
 
 export default function LabelBar({ postId }: Props) {
+  // ✅ 各レンダーで再生成しないようにメモ化
+  const supabase = useMemo(() => supabaseClient(), []);
   const [userId, setUserId] = useState<string | null>(null);
   const [my, setMy] = useState<Set<LabelKey>>(new Set());
   const [counts, setCounts] = useState<Record<LabelKey, number>>({
@@ -37,8 +40,11 @@ export default function LabelBar({ postId }: Props) {
         .select("label")
         .eq("post_id", postId);
       if (alive && all) {
-        const c: any = { funny:0, insight:0, toxic:0, question:0, sarcasm:0 };
-        for (const r of all) { if (c[r.label] != null) c[r.label]++; }
+        const c: Record<LabelKey, number> = { funny:0, insight:0, toxic:0, question:0, sarcasm:0 };
+        for (const r of all as any[]) {
+          const k = r.label as LabelKey;
+          if (k in c) c[k] += 1;
+        }
         setCounts(c);
       }
 
@@ -49,11 +55,11 @@ export default function LabelBar({ postId }: Props) {
           .select("label")
           .eq("post_id", postId)
           .eq("user_id", user.id);
-        if (alive && mine) setMy(new Set(mine.map((r: any) => r.label as LabelKey)));
+        if (alive && mine) setMy(new Set((mine as any[]).map(r => r.label as LabelKey)));
       }
     })();
     return () => { alive = false; };
-  }, [postId]);
+  }, [postId, supabase]);
 
   const onToggle = async (key: LabelKey) => {
     if (!userId) { location.href = `/login?next=${encodeURIComponent(location.pathname)}`; return; }
@@ -85,8 +91,6 @@ export default function LabelBar({ postId }: Props) {
     }
   };
 
-  const disabled = useMemo(() => !!pending, [pending]);
-
   return (
     <div className="flex flex-wrap gap-2">
       {CATALOG.map(({ key, emoji, text }) => {
@@ -95,10 +99,8 @@ export default function LabelBar({ postId }: Props) {
           <button
             key={key}
             onClick={() => onToggle(key)}
-            disabled={disabled}
-            className={`px-2 py-1 rounded border text-sm ${
-              active ? "bg-emerald-50 border-emerald-300" : ""
-            }`}
+            disabled={!!pending}
+            className={`px-2 py-1 rounded border text-sm ${active ? "bg-emerald-50 border-emerald-300" : ""} disabled:opacity-60`}
             title={text}
           >
             <span className="mr-1">{emoji}</span>
