@@ -1,102 +1,53 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import FollowButton from "@/components/FollowButton";
 import PostCard from "@/components/PostCard";
 
-type Profile = {
-  id: string;
-  handle: string;
-  display_name: string | null;
-  bio: string | null;
-};
-
-export default function UserProfile() {
-  const params = useParams<{ handle: string }>();
-  const handle = params.handle;
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [items, setItems] = useState<any[]>([]);
-  const [following, setFollowing] = useState(false);
+export default function UserPage() {
+  const { handle } = useParams<{ handle: string }>();
+  const [prof, setProf] = useState<any>(null);
+  const [posts, setPosts] = useState<any[]>([]);
 
   useEffect(() => {
     (async () => {
-      // プロフィール取得
-      const { data: prof } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("handle", handle)
-        .maybeSingle();
-      if (!prof) return;
-      setProfile(prof);
+      const p = await supabase.from("profiles")
+        .select("id,handle,display_name,bio,avatar_url")
+        .eq("handle", handle).maybeSingle();
+      if (!p.data) return;
+      setProf(p.data);
 
-      // 投稿取得（feed_latest を author で絞る：p.* + s.score）
-      const { data: posts } = await supabase
-        .from("feed_latest")
+      const ps = await supabase.from("v_posts_enriched")
         .select("*")
-        .eq("author", prof.id)
+        .eq("author", p.data.id)
+        .order("created_at", { ascending: false })
         .limit(50);
-      setItems(posts ?? []);
-
-      // 自分がフォロー済みか
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data: rel } = await supabase
-        .from("follows")
-        .select("*")
-        .eq("follower", user.id)
-        .eq("followee", prof.id)
-        .maybeSingle();
-      setFollowing(!!rel);
+      setPosts(ps.data ?? []);
     })();
   }, [handle]);
 
-  const toggleFollow = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      location.href = `/login?next=/u/${handle}`;
-      return;
-    }
-    if (!profile) return;
-    if (following) {
-      await supabase
-        .from("follows")
-        .delete()
-        .eq("follower", user.id)
-        .eq("followee", profile.id);
-      setFollowing(false);
-    } else {
-      await supabase
-        .from("follows")
-        .insert({ follower: user.id, followee: profile.id });
-      setFollowing(true);
-    }
-  };
-
-  if (!profile) return <div>ユーザーが見つかりません。</div>;
+  if (!prof) return <div className="p-6">読み込み中…</div>;
+  const name = prof.display_name || prof.handle;
 
   return (
-    <div className="space-y-4">
-      <div className="p-4 border rounded-xl bg-white">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-xl font-bold">
-              {profile.display_name ?? profile.handle}
-            </div>
-            <div className="opacity-60">@{profile.handle}</div>
-          </div>
-          <button className="border rounded px-3 py-1" onClick={toggleFollow}>
-            {following ? "フォロー中" : "フォロー"}
-          </button>
+    <div className="max-w-3xl mx-auto p-6 space-y-6">
+      <div className="flex items-center gap-4">
+        <img src={prof.avatar_url ?? "https://placehold.co/96x96"}
+             className="w-20 h-20 rounded-full border object-cover" alt={name}/>
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold">{name}</h1>
+          <div className="text-xs opacity-70">@{prof.handle}</div>
+          {prof.bio && <p className="mt-2 opacity-80">{prof.bio}</p>}
         </div>
-        {profile.bio && <p className="mt-2 whitespace-pre-wrap">{profile.bio}</p>}
+        <div className="ml-auto"><FollowButton targetId={prof.id}/></div>
       </div>
 
-      <div className="space-y-3">
-        {items.map((p) => (
-          <PostCard key={p.id} p={p} />
-        ))}
-      </div>
+      <section className="space-y-3">
+        <h2 className="font-semibold">投稿</h2>
+        {posts.map(p => <PostCard key={p.id} p={p} />)}
+        {!posts.length && <div className="opacity-70 text-sm">まだ投稿がありません。</div>}
+      </section>
     </div>
   );
 }

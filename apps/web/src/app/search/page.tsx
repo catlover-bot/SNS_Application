@@ -1,36 +1,88 @@
 // apps/web/src/app/search/page.tsx
 "use client";
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+
+import { useEffect, useMemo, useState } from "react";
+import PostCard from "@/components/PostCard";
+import { supabaseClient as supabase } from "@/lib/supabase/client";
+
+type Row = {
+  id: string;
+  created_at: string;
+  author: string;
+  text: string;
+  arche_key?: string | null;
+};
 
 export default function Search() {
-  const [q, setQ] = useState("");
-  const [users, setUsers] = useState<any[]>([]);
+  // ← ここで Supabase クライアントを1回だけ生成
+  const sb = useMemo(() => supabase(), []);
 
-  async function run() {
-    const { data, error } = await supabase.rpc("search_profiles", { q });
-    if (!error) setUsers(data || []);
-  }
-  useEffect(() => { run(); }, []); // 初期
+  const [q, setQ] = useState("");
+  const [items, setItems] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let stop = false;
+
+    const run = async () => {
+      const query = q.trim();
+      if (query.length === 0) {
+        setItems([]);
+        setErr(null);
+        return;
+      }
+      setLoading(true);
+      setErr(null);
+      try {
+        const { data, error } = await sb
+          .from("posts")
+          .select("id, created_at, author, text, arche_key")
+          .ilike("text", `%${query}%`)
+          .order("created_at", { ascending: false })
+          .limit(50);
+
+        if (stop) return;
+        if (error) {
+          setErr(error.message ?? "検索に失敗しました");
+          setItems([]);
+        } else {
+          setItems((data ?? []) as Row[]);
+        }
+      } finally {
+        if (!stop) setLoading(false);
+      }
+    };
+
+    const t = setTimeout(run, 300); // 簡易デバウンス
+    return () => {
+      stop = true;
+      clearTimeout(t);
+    };
+  }, [q, sb]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex gap-2">
-        <input className="border p-2 rounded flex-1" value={q} onChange={(e)=>setQ(e.target.value)} placeholder="ユーザー名/表示名で検索" />
-        <button onClick={run} className="px-3 py-2 border rounded">検索</button>
-      </div>
-      <ul className="space-y-2">
-        {users.map(u=>(
-          <li key={u.id} className="p-3 border rounded flex gap-3 items-center">
-            <img src={u.avatar_url || "/default-avatar.svg"} className="w-10 h-10 rounded-full border" />
-            <div className="flex-1">
-              <a className="font-medium hover:underline" href={`/user/${u.username || u.id}`}>{u.display_name || u.username || "無名"}</a>
-              <div className="opacity-60">@{u.username || String(u.id).slice(0,8)}</div>
-              {u.bio && <div className="opacity-70 text-sm">{u.bio}</div>}
-            </div>
-          </li>
+    <div className="max-w-3xl mx-auto p-6 space-y-4">
+      <h1 className="text-xl font-semibold">検索</h1>
+
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="投稿本文を検索…"
+        className="w-full border rounded-lg px-3 py-2"
+      />
+
+      {err && <div className="text-sm text-red-600 border rounded p-3 bg-red-50">{err}</div>}
+      {loading && <div className="opacity-60">検索中…</div>}
+      {!loading && !err && q.trim() !== "" && items.length === 0 && (
+        <div className="opacity-60 text-sm">該当する投稿は見つかりませんでした。</div>
+      )}
+
+      <div className="space-y-3">
+        {items.map((p) => (
+          <PostCard key={p.id ?? `${p.created_at}-${p.author ?? ""}`} p={p} />
         ))}
-      </ul>
+      </div>
     </div>
   );
 }

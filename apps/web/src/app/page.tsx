@@ -1,7 +1,8 @@
+// apps/web/src/app/page.tsx
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
-import { supabase } from "@/lib/supabase";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { supabaseClient as supabase } from "@/lib/supabase/client";
 import PostCard from "@/components/PostCard";
 
 type Post = {
@@ -15,6 +16,9 @@ type Post = {
 const PAGE = 20;
 
 export default function Home() {
+  // ✅ Supabase クライアントを1度だけ生成
+  const sb = useMemo(() => supabase(), []);
+
   const [items, setItems] = useState<Post[]>([]);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
@@ -46,12 +50,12 @@ export default function Home() {
       const from = nextPage * PAGE;
       const to = from + PAGE - 1;
 
-      // 1st: 推奨ビュー
-      const res = await supabase.from("feed_latest").select("*").range(from, to);
+      // 1st: materialized/feed view
+      const res = await sb.from("feed_latest").select("*").range(from, to);
 
       if (res.error) {
-        // 2nd: フォールバック（posts を時系列で）
-        const fb = await supabase
+        // Fallback: posts の新着
+        const fb = await sb
           .from("posts")
           .select("*")
           .order("created_at", { ascending: false })
@@ -75,15 +79,13 @@ export default function Home() {
       setHasMore(got.length === PAGE);
       setIsLoading(false);
     },
-    [appendUnique, hasMore, isLoading]
+    [appendUnique, hasMore, isLoading, sb]
   );
 
-  // 初回ロード
   useEffect(() => {
     fetchPage(0);
   }, [fetchPage]);
 
-  // 無限スクロール
   useEffect(() => {
     if (!sentinel.current) return;
     const io = new IntersectionObserver(
@@ -94,36 +96,35 @@ export default function Home() {
           fetchPage(n);
         }
       },
-      { rootMargin: "300px 0px" } // 余裕を持って読み込む & 発火の暴走を軽減
+      { rootMargin: "300px 0px" }
     );
     io.observe(sentinel.current);
     return () => io.disconnect();
   }, [page, hasMore, isLoading, fetchPage]);
 
-  if (errorMsg) {
+  if (errorMsg)
     return (
       <div className="space-y-3">
         <p className="text-red-600">{errorMsg}</p>
         <a href="/compose" className="underline">
-          まずは最初の投稿を作ってみる
+          最初の投稿を作る
         </a>
       </div>
     );
-  }
 
   return (
     <div className="space-y-3">
       {items.length === 0 && (
         <div className="opacity-70">
-          まだ投稿がありません。<a className="underline" href="/compose">最初の投稿を作る</a>
+          まだ投稿がありません。
+          <a className="underline" href="/compose">
+            最初の投稿を作る
+          </a>
         </div>
       )}
-
-      {/* key 重複の保険：id が無ければ created_at+author */}
       {items.map((p) => (
         <PostCard key={p.id ?? `${p.created_at}-${p.author ?? ""}`} p={p} />
       ))}
-
       <div ref={sentinel} className="h-12" />
       {isLoading && <div className="text-center py-6 opacity-60">読み込み中…</div>}
       {!hasMore && items.length > 0 && (
