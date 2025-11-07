@@ -1,3 +1,4 @@
+// apps/web/src/app/trending/page.tsx
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
@@ -6,123 +7,108 @@ import PostCard from "@/components/PostCard";
 type Post = {
   id: string;
   created_at: string;
-  author: string;
-  text: string;
-  arche_key?: string | null;
+  author?: string | null;
+  text?: string | null;
+  body?: string | null;
   score?: number | null;
+
+  author_handle?: string | null;
+  author_display?: string | null;
+  author_avatar?: string | null;
+  reply_count?: number | null;
+  arche_key?: string | null;
 };
+
+type ApiResp = { persona_key?: string | null; items: Post[] };
 
 const PAGE = 20;
 
-export default function TrendingPage() {
+export default function Trending() {
   const [items, setItems] = useState<Post[]>([]);
-  const [page, setPage] = useState(0);
+  const [personaKey, setPersonaKey] = useState<string | null | undefined>(undefined);
   const [hasMore, setHasMore] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  const sentinelRef = useRef<HTMLDivElement>(null);
-  // 追加済みキーを保持して重複挿入を防止
-  const seenRef = useRef<Set<string>>(new Set());
-
-  // 一意キー（将来 id が欠けても衝突しにくいようにフォールバック）
-  const keyOf = (p: Post) => p.id ?? `${p.created_at}-${p.author ?? ""}`;
-
-  // 重複を足さない append
-  const appendUnique = useCallback((arr: Post[]) => {
-    if (!arr?.length) return;
-    setItems((prev) => {
-      const out = [...prev];
-      for (const p of arr) {
-        const k = keyOf(p);
-        if (!seenRef.current.has(k)) {
-          seenRef.current.add(k);
-          out.push(p);
-        }
-      }
-      return out;
-    });
-  }, []);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errmsg, setErrmsg] = useState<string | null>(null);
+  const sentinel = useRef<HTMLDivElement>(null);
 
   const fetchPage = useCallback(
-    async (nextPage: number) => {
-      if (loading || !hasMore) return;
-      setLoading(true);
-      setErrorMsg(null);
+    async (append: boolean) => {
+      if (isLoading || (!append && items.length > 0)) return;
 
-      const limit = PAGE;
-      const offset = nextPage * PAGE;
+      setIsLoading(true);
+      setErrmsg(null);
+
+      const lastISO = append && items.length > 0 ? items[items.length - 1].created_at : undefined;
+      const qs = new URLSearchParams({ limit: String(PAGE) });
+      if (lastISO) qs.set("since", lastISO);
 
       try {
-        // BFF を叩く（フロントは軽く）
-        const res = await fetch(`/api/trending?limit=${limit}&offset=${offset}`, {
-          cache: "no-store",
-        });
+        const res = await fetch(`/api/trending?${qs.toString()}`, { cache: "no-store" });
         if (!res.ok) {
-          const t = await res.text().catch(() => "");
-          throw new Error(t || `failed: ${res.status}`);
+          const body = await res.text().catch(() => "");
+          throw new Error(`failed: ${res.status} ${body}`);
         }
-        const data = (await res.json()) as Post[];
-        appendUnique(data);
-        setHasMore(data.length === PAGE);
+        const json = (await res.json()) as ApiResp;
+        if (personaKey === undefined) setPersonaKey(json.persona_key ?? null); // 初回だけセット
+
+        const got = json.items ?? [];
+        setItems((prev) => (append ? [...prev, ...got] : got));
+        setHasMore(got.length === PAGE);
       } catch (e: any) {
-        setErrorMsg(String(e?.message ?? e));
+        setErrmsg(e?.message ?? "トレンドの取得に失敗しました。");
       } finally {
-        setLoading(false);
+        setIsLoading(false);
       }
     },
-    [appendUnique, loading, hasMore]
+    [isLoading, items, personaKey]
   );
 
-  // 初回ロード
+  // 初回
   useEffect(() => {
-    // 念のため初期化（再訪時の重複を避けたい場合）
-    seenRef.current.clear();
-    setItems([]);
-    setPage(0);
-    setHasMore(true);
-    fetchPage(0);
-  }, [fetchPage]);
+    fetchPage(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 無限スクロール
   useEffect(() => {
-    if (!sentinelRef.current) return;
+    if (!sentinel.current) return;
     const io = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && hasMore && !loading) {
-          const n = page + 1;
-          setPage(n);
-          fetchPage(n);
-        }
+        if (entries[0].isIntersecting && hasMore && !isLoading) fetchPage(true);
       },
       { rootMargin: "300px 0px" }
     );
-    io.observe(sentinelRef.current);
+    io.observe(sentinel.current);
     return () => io.disconnect();
-  }, [page, hasMore, loading, fetchPage]);
+  }, [fetchPage, hasMore, isLoading]);
 
   return (
-    <div className="space-y-3">
-      <h1 className="text-xl font-semibold mb-2">トレンド</h1>
+    <div className="max-w-3xl mx-auto p-6 space-y-4">
+      <div className="flex items-center gap-2">
+        <h1 className="text-xl font-semibold">トレンド（あなた向け）</h1>
+        {personaKey !== undefined && (
+          <span className="text-xs px-2 py-1 rounded-full border bg-white">
+            {personaKey ? `キャラ一致: @${personaKey}` : "汎用トレンド"}
+          </span>
+        )}
+      </div>
 
-      {errorMsg && (
-        <div className="text-red-600 text-sm border rounded p-3 bg-red-50">
-          {errorMsg}
-        </div>
+      {errmsg && <div className="text-sm text-red-600 border bg-red-50 rounded p-3">{errmsg}</div>}
+
+      {items.length === 0 && !isLoading && !errmsg && (
+        <div className="opacity-70 text-sm">おすすめ投稿がまだありません。</div>
       )}
 
-      {items.length === 0 && !loading && !errorMsg && (
-        <div className="opacity-70 text-sm">まだトレンド投稿がありません。</div>
-      )}
+      <div className="space-y-3">
+        {items.map((p) => (
+          <PostCard key={p.id ?? `${p.created_at}-${p.author ?? ""}`} p={p} />
+        ))}
+      </div>
 
-      {items.map((p) => (
-        <PostCard key={keyOf(p)} p={p} />
-      ))}
-
-      <div ref={sentinelRef} className="h-12" />
-      {loading && <div className="text-center py-6 opacity-60">読み込み中…</div>}
+      <div ref={sentinel} className="h-10" />
+      {isLoading && <div className="opacity-60 text-center py-6">読み込み中…</div>}
       {!hasMore && items.length > 0 && (
-        <div className="text-center py-6 opacity-60">すべて読み込みました</div>
+        <div className="opacity-60 text-center py-6">すべて読み込みました</div>
       )}
     </div>
   );
