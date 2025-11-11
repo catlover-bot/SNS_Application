@@ -1,114 +1,60 @@
 // apps/web/src/app/trending/page.tsx
-"use client";
+export const dynamic = "force-dynamic";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import Link from "next/link";
 import PostCard from "@/components/PostCard";
 
-type Post = {
-  id: string;
-  created_at: string;
-  author?: string | null;
-  text?: string | null;
-  body?: string | null;
-  score?: number | null;
+async function fetchTrending(): Promise<{items:any[]; used_personas:string[]}> {
+  const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/api/trending?limit=30`, {
+    // SSR で毎回取りたい（デモなら no-store でもOK）
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    // 失敗しても空配列返す
+    return { items: [], used_personas: [] };
+  }
+  return res.json();
+}
 
-  author_handle?: string | null;
-  author_display?: string | null;
-  author_avatar?: string | null;
-  reply_count?: number | null;
-  arche_key?: string | null;
-};
-
-type ApiResp = { persona_key?: string | null; items: Post[] };
-
-const PAGE = 20;
-
-export default function Trending() {
-  const [items, setItems] = useState<Post[]>([]);
-  const [personaKey, setPersonaKey] = useState<string | null | undefined>(undefined);
-  const [hasMore, setHasMore] = useState(true);
-  const [isLoading, setIsLoading] = useState(false);
-  const [errmsg, setErrmsg] = useState<string | null>(null);
-  const sentinel = useRef<HTMLDivElement>(null);
-
-  const fetchPage = useCallback(
-    async (append: boolean) => {
-      if (isLoading || (!append && items.length > 0)) return;
-
-      setIsLoading(true);
-      setErrmsg(null);
-
-      const lastISO = append && items.length > 0 ? items[items.length - 1].created_at : undefined;
-      const qs = new URLSearchParams({ limit: String(PAGE) });
-      if (lastISO) qs.set("since", lastISO);
-
-      try {
-        const res = await fetch(`/api/trending?${qs.toString()}`, { cache: "no-store" });
-        if (!res.ok) {
-          const body = await res.text().catch(() => "");
-          throw new Error(`failed: ${res.status} ${body}`);
-        }
-        const json = (await res.json()) as ApiResp;
-        if (personaKey === undefined) setPersonaKey(json.persona_key ?? null); // 初回だけセット
-
-        const got = json.items ?? [];
-        setItems((prev) => (append ? [...prev, ...got] : got));
-        setHasMore(got.length === PAGE);
-      } catch (e: any) {
-        setErrmsg(e?.message ?? "トレンドの取得に失敗しました。");
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [isLoading, items, personaKey]
-  );
-
-  // 初回
-  useEffect(() => {
-    fetchPage(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // 無限スクロール
-  useEffect(() => {
-    if (!sentinel.current) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMore && !isLoading) fetchPage(true);
-      },
-      { rootMargin: "300px 0px" }
-    );
-    io.observe(sentinel.current);
-    return () => io.disconnect();
-  }, [fetchPage, hasMore, isLoading]);
+export default async function TrendingPage() {
+  const { items, used_personas } = await fetchTrending();
 
   return (
     <div className="max-w-3xl mx-auto p-6 space-y-4">
-      <div className="flex items-center gap-2">
-        <h1 className="text-xl font-semibold">トレンド（あなた向け）</h1>
-        {personaKey !== undefined && (
-          <span className="text-xs px-2 py-1 rounded-full border bg-white">
-            {personaKey ? `キャラ一致: @${personaKey}` : "汎用トレンド"}
+      <header className="flex items-center gap-3">
+        <h1 className="text-2xl font-bold">トレンド</h1>
+        {used_personas.length > 0 ? (
+          <span className="text-xs px-2 py-1 rounded-full border bg-amber-50">
+            あなた向け（{used_personas.join(", ")}）
+          </span>
+        ) : (
+          <span className="text-xs px-2 py-1 rounded-full border bg-gray-50">
+            全体人気順
           </span>
         )}
-      </div>
+        <div className="ml-auto text-sm">
+          <Link href="/personas" className="underline">キャラ図鑑</Link>
+        </div>
+      </header>
 
-      {errmsg && <div className="text-sm text-red-600 border bg-red-50 rounded p-3">{errmsg}</div>}
-
-      {items.length === 0 && !isLoading && !errmsg && (
-        <div className="opacity-70 text-sm">おすすめ投稿がまだありません。</div>
-      )}
-
-      <div className="space-y-3">
-        {items.map((p) => (
-          <PostCard key={p.id ?? `${p.created_at}-${p.author ?? ""}`} p={p} />
-        ))}
-      </div>
-
-      <div ref={sentinel} className="h-10" />
-      {isLoading && <div className="opacity-60 text-center py-6">読み込み中…</div>}
-      {!hasMore && items.length > 0 && (
-        <div className="opacity-60 text-center py-6">すべて読み込みました</div>
+      {items.length === 0 ? (
+        <div className="opacity-70 text-sm">おすすめが見つかりませんでした。</div>
+      ) : (
+        <div className="space-y-3">
+          {items.map((p: any) => (
+            <div key={p.id} className="relative">
+              {/* PostCard は既存のまま利用 */}
+              <PostCard p={p} />
+              {/* 右上にスコア/マッチ情報（軽く） */}
+              {("score" in p || "matched_persona" in p) && (
+                <div className="absolute top-2 right-2 text-xs text-gray-500 bg-white/80 px-2 py-1 rounded border">
+                  {p.matched_persona ? `match: ${p.matched_persona}` : "global"}
+                  {typeof p.score === "number" ? ` · ${p.score.toFixed(5)}` : ""}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
