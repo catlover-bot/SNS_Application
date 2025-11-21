@@ -81,6 +81,7 @@ export default function Nav() {
           <Link href="/messages">DM</Link>
           <Link href="/following">フォロー中</Link>
           <Link href="/compose">投稿</Link>
+          <Link href="/dashboard/persona">キャラ分析</Link>
 
           {/* 通知（未読バッジ） */}
           <Link href="/notifications" className="relative inline-flex items-center">

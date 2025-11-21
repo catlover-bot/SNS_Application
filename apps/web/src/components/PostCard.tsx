@@ -39,7 +39,7 @@ function ScoreBadge({ score }: { score: number | null | undefined }) {
 }
 
 export default function PostCard({ p }: { p: Post }) {
-  // ✅ Supabase クライアントを1度だけ生成
+  // ✅ Supabase クライアントを1回だけ生成
   const sb = useMemo(() => supabase(), []);
 
   const content = (p.text ?? p.body ?? "").toString();
@@ -68,9 +68,9 @@ export default function PostCard({ p }: { p: Post }) {
       if (r.data) {
         setAuthor((a) => ({
           ...a,
-          handle: r.data.handle,
-          name: r.data.display_name ?? r.data.handle,
-          avatar: r.data.avatar_url ?? a.avatar,
+          handle: r.data!.handle,
+          name: r.data!.display_name ?? r.data!.handle,
+          avatar: r.data!.avatar_url ?? a.avatar,
         }));
       }
     })();
@@ -81,6 +81,11 @@ export default function PostCard({ p }: { p: Post }) {
   const [likes, setLikes] = useState<number>(0);
   const [liked, setLiked] = useState(false);
   const [pendingLike, setPendingLike] = useState(false);
+
+  // 🚀 拡散（Boost）
+  const [boosts, setBoosts] = useState<number>(0);
+  const [boosted, setBoosted] = useState(false);
+  const [pendingBoost, setPendingBoost] = useState(false);
 
   // 真偽
   const [voteTrue, setVoteTrue] = useState(0);
@@ -107,6 +112,7 @@ export default function PostCard({ p }: { p: Post }) {
   useEffect(() => {
     let alive = true;
     (async () => {
+      // いいね件数
       const l = await sb
         .from("reactions")
         .select("id", { count: "exact", head: true })
@@ -114,10 +120,21 @@ export default function PostCard({ p }: { p: Post }) {
         .eq("kind", "like");
       if (alive && typeof l.count === "number") setLikes(l.count);
 
+      // 🚀 ブースト件数
+      const b = await sb
+        .from("reactions")
+        .select("id", { count: "exact", head: true })
+        .eq("post_id", p.id)
+        .eq("kind", "boost");
+      if (alive && typeof b.count === "number") setBoosts(b.count);
+
+      // 自分の状態
       const {
         data: { user },
       } = await sb.auth.getUser();
+
       if (user) {
+        // 自分の「いいね」
         const meLike = await sb
           .from("reactions")
           .select("user_id")
@@ -127,6 +144,17 @@ export default function PostCard({ p }: { p: Post }) {
           .maybeSingle();
         if (alive) setLiked(!!meLike.data);
 
+        // 自分の「Boost」
+        const meBoost = await sb
+          .from("reactions")
+          .select("user_id")
+          .eq("post_id", p.id)
+          .eq("kind", "boost")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (alive) setBoosted(!!meBoost.data);
+
+        // 真偽投票
         const mv = await sb
           .from("truth_votes")
           .select("value")
@@ -135,6 +163,7 @@ export default function PostCard({ p }: { p: Post }) {
           .maybeSingle();
         if (alive) setMyVote((mv.data?.value as 1 | -1 | undefined) ?? 0);
 
+        // 自分のラベル
         const myLs = await sb
           .from("post_labels")
           .select("label")
@@ -149,6 +178,7 @@ export default function PostCard({ p }: { p: Post }) {
         }
       }
 
+      // 真偽件数
       const [t1, t2] = await Promise.all([
         sb.from("truth_votes").select("id", { count: "exact", head: true }).eq("post_id", p.id).eq("value", 1),
         sb.from("truth_votes").select("id", { count: "exact", head: true }).eq("post_id", p.id).eq("value", -1),
@@ -158,6 +188,7 @@ export default function PostCard({ p }: { p: Post }) {
         if (typeof t2.count === "number") setVoteFalse(t2.count);
       }
 
+      // ラベル件数
       const allLabels = await sb.from("post_labels").select("label").eq("post_id", p.id);
       if (alive) {
         const counts = Object.fromEntries(labelKeys.map((k) => [k, 0])) as Record<LabelKey, number>;
@@ -215,6 +246,40 @@ export default function PostCard({ p }: { p: Post }) {
       setLikes(prevLikes);
     } finally {
       setPendingLike(false);
+    }
+  }
+
+  // 🚀 Boost
+  async function toggleBoost() {
+    if (pendingBoost) return;
+    const user = await ensureLoginOrRedirect();
+    if (!user) return;
+    setPendingBoost(true);
+
+    const prevBoosted = boosted,
+      prevBoosts = boosts;
+    const nextBoosted = !prevBoosted;
+    setBoosted(nextBoosted);
+    setBoosts(prevBoosts + (nextBoosted ? 1 : -1));
+
+    try {
+      if (nextBoosted) {
+        const { error } = await sb.from("reactions").insert({ post_id: p.id, user_id: user.id, kind: "boost" });
+        if (error) throw error;
+      } else {
+        const { error } = await sb
+          .from("reactions")
+          .delete()
+          .eq("post_id", p.id)
+          .eq("user_id", user.id)
+          .eq("kind", "boost");
+        if (error) throw error;
+      }
+    } catch {
+      setBoosted(prevBoosted);
+      setBoosts(prevBoosts);
+    } finally {
+      setPendingBoost(false);
     }
   }
 
@@ -353,6 +418,16 @@ export default function PostCard({ p }: { p: Post }) {
           title="いいね"
         >
           ♥ {likes}
+        </button>
+
+        {/* 🚀 拡散（Boost） */}
+        <button
+          onClick={toggleBoost}
+          disabled={pendingBoost}
+          className={`px-2 py-1 rounded border ${boosted ? "bg-purple-50 border-purple-300" : "bg-gray-50"} disabled:opacity-60`}
+          title="拡散（フォロワーに広める）"
+        >
+          🚀 {boosts}
         </button>
 
         {/* 真偽 */}
