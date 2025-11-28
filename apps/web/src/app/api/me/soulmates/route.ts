@@ -9,7 +9,20 @@ type Row = {
   relation_label: string | null;
 };
 
+type ProfileRow = {
+  id: string;
+  handle: string | null;
+  display_name: string | null;
+  avatar_url: string | null;
+};
+
+type PersonaDefRow = {
+  key: string;
+  title: string | null;
+};
+
 export async function GET(req: NextRequest) {
+  // supabaseServer が Promise / そのまま の両方に対応するラッパ
   const supabaseMaybe = supabaseServer() as any;
   const supabase =
     typeof supabaseMaybe.then === "function"
@@ -51,7 +64,11 @@ export async function GET(req: NextRequest) {
 
   // ② プロフィール情報（名前 / アイコン）
   const userIds = Array.from(new Set(rows.map((r) => r.target_user_id)));
-  const { data: profiles, error: profErr } = await supabase
+
+  const {
+    data: profileRows,
+    error: profErr,
+  } = await supabase
     .from("profiles")
     .select("id, handle, display_name, avatar_url")
     .in("id", userIds);
@@ -60,8 +77,8 @@ export async function GET(req: NextRequest) {
     console.error("[soulmates] profiles error", profErr);
   }
 
-  const profileMap = new Map(
-    (profiles ?? []).map((p: any) => [p.id as string, p])
+  const profileMap = new Map<string, ProfileRow>(
+    ((profileRows ?? []) as ProfileRow[]).map((p) => [p.id, p])
   );
 
   // ③ キャラ名（日本語タイトル）
@@ -69,7 +86,10 @@ export async function GET(req: NextRequest) {
     new Set(rows.map((r) => r.target_persona_key))
   );
 
-  const { data: defs, error: defsErr } = await supabase
+  const {
+    data: defRows,
+    error: defsErr,
+  } = await supabase
     .from("persona_defs")
     .select("key, title")
     .in("key", personaKeys);
@@ -78,8 +98,8 @@ export async function GET(req: NextRequest) {
     console.error("[soulmates] persona_defs error", defsErr);
   }
 
-  const personaMap = new Map(
-    (defs ?? []).map((d: any) => [d.key as string, d.title as string])
+  const personaMap = new Map<string, string | null>(
+    ((defRows ?? []) as PersonaDefRow[]).map((d) => [d.key, d.title])
   );
 
   // ④ フロント用の整形
