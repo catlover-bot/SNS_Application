@@ -7,6 +7,7 @@ import { supabaseClient as supabase } from "@/lib/supabase/client";
 import FollowButton from "@/components/FollowButton";
 import Replies from "@/components/Replies";
 import { LABELS, type LabelKey } from "@/lib/labels";
+import { AiPostVerdictBadge } from "@/components/AiPostVerdictBadge";
 
 type Post = {
   id: string;
@@ -20,17 +21,36 @@ type Post = {
   author_avatar?: string | null;
 
   reply_count?: number | null;
-  score?: number | null;
+  score?: number | null; // 0..1 (ローカルの嘘スコア)
 };
 
-function ScoreBadge({ score }: { score: number | null | undefined }) {
-  const s = Math.max(0, Math.min(1, Number(score ?? 0) || 0));
-  const pct = Math.round(s * 100);
+function ScoreBadge({
+  score,
+  aiPercent,
+}: {
+  score: number | null | undefined;
+  aiPercent?: number | null;
+}) {
+  let pct: number;
+
+  if (typeof aiPercent === "number") {
+    // AI 由来の「嘘％」がある場合はそれを優先
+    pct = Math.max(0, Math.min(100, Math.round(aiPercent)));
+  } else {
+    // 従来どおり score (0..1) から計算
+    const s = Math.max(0, Math.min(1, Number(score ?? 0) || 0));
+    pct = Math.round(s * 100);
+  }
+
   const hue = 120 - Math.min(120, pct);
+
   return (
     <span
       className="text-xs px-2 py-1 rounded-full border"
-      style={{ background: `hsl(${hue} 70% 95%)`, borderColor: `hsl(${hue} 50% 60%)` }}
+      style={{
+        background: `hsl(${hue} 70% 95%)`,
+        borderColor: `hsl(${hue} 50% 60%)`,
+      }}
       title={`嘘っぽさ ${pct}%`}
     >
       嘘 {pct}%
@@ -94,19 +114,32 @@ export default function PostCard({ p }: { p: Post }) {
   const [pendingVote, setPendingVote] = useState(false);
 
   // ラベル
-  const labelKeys = useMemo(() => LABELS.map((l) => l.key) as readonly LabelKey[], []);
+  const labelKeys = useMemo(
+    () => LABELS.map((l) => l.key) as readonly LabelKey[],
+    []
+  );
   const [labelCounts, setLabelCounts] = useState<Record<LabelKey, number>>(
-    Object.fromEntries(labelKeys.map((k) => [k, 0])) as Record<LabelKey, number>
+    Object.fromEntries(labelKeys.map((k) => [k, 0])) as Record<
+      LabelKey,
+      number
+    >
   );
   const [myLabels, setMyLabels] = useState<Set<LabelKey>>(new Set());
-  const [pendingLabelKey, setPendingLabelKey] = useState<LabelKey | null>(null);
+  const [pendingLabelKey, setPendingLabelKey] = useState<LabelKey | null>(
+    null
+  );
 
   // スレッド/返信
   const [showThread, setShowThread] = useState(false);
   const [showReply, setShowReply] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [replying, setReplying] = useState(false);
-  const [replyCount, setReplyCount] = useState<number>(p.reply_count ?? 0);
+  const [replyCount, setReplyCount] = useState<number>(
+    p.reply_count ?? 0
+  );
+
+  // 🔥 LLM 由来の「嘘％」（AI 判定バッジから通知される）
+  const [aiLiePercent, setAiLiePercent] = useState<number | null>(null);
 
   // 初期ロード
   useEffect(() => {
@@ -161,7 +194,8 @@ export default function PostCard({ p }: { p: Post }) {
           .eq("post_id", p.id)
           .eq("voter", user.id)
           .maybeSingle();
-        if (alive) setMyVote((mv.data?.value as 1 | -1 | undefined) ?? 0);
+        if (alive)
+          setMyVote((mv.data?.value as 1 | -1 | undefined) ?? 0);
 
         // 自分のラベル
         const myLs = await sb
@@ -172,7 +206,8 @@ export default function PostCard({ p }: { p: Post }) {
         if (alive) {
           const set = new Set<LabelKey>();
           (myLs.data ?? []).forEach((r: any) => {
-            if (labelKeys.includes(r.label as LabelKey)) set.add(r.label as LabelKey);
+            if (labelKeys.includes(r.label as LabelKey))
+              set.add(r.label as LabelKey);
           });
           setMyLabels(set);
         }
@@ -180,8 +215,16 @@ export default function PostCard({ p }: { p: Post }) {
 
       // 真偽件数
       const [t1, t2] = await Promise.all([
-        sb.from("truth_votes").select("id", { count: "exact", head: true }).eq("post_id", p.id).eq("value", 1),
-        sb.from("truth_votes").select("id", { count: "exact", head: true }).eq("post_id", p.id).eq("value", -1),
+        sb
+          .from("truth_votes")
+          .select("id", { count: "exact", head: true })
+          .eq("post_id", p.id)
+          .eq("value", 1),
+        sb
+          .from("truth_votes")
+          .select("id", { count: "exact", head: true })
+          .eq("post_id", p.id)
+          .eq("value", -1),
       ]);
       if (alive) {
         if (typeof t1.count === "number") setVoteTrue(t1.count);
@@ -189,9 +232,14 @@ export default function PostCard({ p }: { p: Post }) {
       }
 
       // ラベル件数
-      const allLabels = await sb.from("post_labels").select("label").eq("post_id", p.id);
+      const allLabels = await sb
+        .from("post_labels")
+        .select("label")
+        .eq("post_id", p.id);
       if (alive) {
-        const counts = Object.fromEntries(labelKeys.map((k) => [k, 0])) as Record<LabelKey, number>;
+        const counts = Object.fromEntries(
+          labelKeys.map((k) => [k, 0])
+        ) as Record<LabelKey, number>;
         (allLabels.data ?? []).forEach((r: any) => {
           const k = r.label as LabelKey;
           if (k in counts) counts[k] += 1;
@@ -209,7 +257,9 @@ export default function PostCard({ p }: { p: Post }) {
       data: { user },
     } = await sb.auth.getUser();
     if (!user) {
-      location.href = `/login?next=${encodeURIComponent(location.pathname)}`;
+      location.href = `/login?next=${encodeURIComponent(
+        location.pathname
+      )}`;
       return null;
     }
     return user;
@@ -230,7 +280,9 @@ export default function PostCard({ p }: { p: Post }) {
 
     try {
       if (nextLiked) {
-        const { error } = await sb.from("reactions").insert({ post_id: p.id, user_id: user.id, kind: "like" });
+        const { error } = await sb
+          .from("reactions")
+          .insert({ post_id: p.id, user_id: user.id, kind: "like" });
         if (error) throw error;
       } else {
         const { error } = await sb
@@ -264,7 +316,9 @@ export default function PostCard({ p }: { p: Post }) {
 
     try {
       if (nextBoosted) {
-        const { error } = await sb.from("reactions").insert({ post_id: p.id, user_id: user.id, kind: "boost" });
+        const { error } = await sb
+          .from("reactions")
+          .insert({ post_id: p.id, user_id: user.id, kind: "boost" });
         if (error) throw error;
       } else {
         const { error } = await sb
@@ -307,12 +361,17 @@ export default function PostCard({ p }: { p: Post }) {
     setVoteFalse(nf);
 
     try {
-      const { data, error } = await sb.rpc("upsert_truth_vote", { post_id: p.id, value: next });
+      const { data, error } = await sb.rpc("upsert_truth_vote", {
+        post_id: p.id,
+        value: next,
+      });
       if (error) throw error;
       if (data) {
         const t = Number((data as any).true ?? nt);
         const f = Number((data as any).false ?? nf);
-        const m = Number((data as any).my_vote ?? next) as 1 | 0 | -1;
+        const m = Number(
+          (data as any).my_vote ?? next
+        ) as 1 | 0 | -1;
         setVoteTrue(t);
         setVoteFalse(f);
         setMyVote(m);
@@ -341,11 +400,16 @@ export default function PostCard({ p }: { p: Post }) {
     if (had) nextSet.delete(label);
     else nextSet.add(label);
     setMyLabels(nextSet);
-    setLabelCounts((c) => ({ ...c, [label]: Math.max(0, (c[label] ?? 0) + (had ? -1 : 1)) }));
+    setLabelCounts((c) => ({
+      ...c,
+      [label]: Math.max(0, (c[label] ?? 0) + (had ? -1 : 1)),
+    }));
 
     try {
       if (!had) {
-        const { error } = await sb.from("post_labels").insert({ post_id: p.id, user_id: user.id, label });
+        const { error } = await sb
+          .from("post_labels")
+          .insert({ post_id: p.id, user_id: user.id, label });
         if (error) throw error;
       } else {
         const { error } = await sb
@@ -370,7 +434,10 @@ export default function PostCard({ p }: { p: Post }) {
     const user = await ensureLoginOrRedirect();
     if (!user) return;
     setReplying(true);
-    const r = await sb.rpc("create_reply", { parent: p.id, body: replyText.trim() });
+    const r = await sb.rpc("create_reply", {
+      parent: p.id,
+      body: replyText.trim(),
+    });
     if (!r.error) {
       setReplyText("");
       setShowReply(false);
@@ -384,29 +451,55 @@ export default function PostCard({ p }: { p: Post }) {
     <div className="rounded border p-4 bg-white space-y-3">
       {/* ヘッダー */}
       <div className="flex items-center gap-2 text-sm">
-        <Link href={author.handle ? `/u/${encodeURIComponent(author.handle)}` : "#"} className="flex items-center gap-2 min-w-0">
+        <Link
+          href={
+            author.handle
+              ? `/u/${encodeURIComponent(author.handle)}`
+              : "#"
+          }
+          className="flex items-center gap-2 min-w-0"
+        >
           <img
             src={author.avatar ?? "https://placehold.co/32x32"}
             className="w-7 h-7 rounded-full border object-cover"
             alt={author.name ?? author.handle ?? "user"}
           />
           <span className="font-medium truncate max-w-[12rem]">
-            {author.name ?? author.handle ?? (author.id ?? "").slice(0, 8)}
+            {author.name ??
+              author.handle ??
+              (author.id ?? "").slice(0, 8)}
           </span>
-          {author.handle && <span className="opacity-60">@{author.handle}</span>}
+          {author.handle && (
+            <span className="opacity-60">@{author.handle}</span>
+          )}
         </Link>
         <span className="opacity-60">·</span>
         <time dateTime={p.created_at} className="opacity-60">
           {new Date(p.created_at).toLocaleString()}
         </time>
         <div className="ml-auto flex items-center gap-2">
-          {author.id && <FollowButton targetId={author.id as string} />}
-          <ScoreBadge score={p.score} />
+          {author.id && (
+            <FollowButton targetId={author.id as string} />
+          )}
         </div>
       </div>
 
       {/* 本文 */}
-      <div className="whitespace-pre-wrap break-words text-[15px] leading-6">{content}</div>
+      <div className="whitespace-pre-wrap break-words text-[15px] leading-6">
+        {content}
+      </div>
+
+      {/* 嘘スコア & AI 判定 */}
+      <div className="flex flex-col items-stretch gap-1">
+        <div className="flex justify-end">
+          {/* AI の嘘％があればそれを優先してバッジに表示 */}
+          <ScoreBadge score={p.score} aiPercent={aiLiePercent} />
+        </div>
+        <AiPostVerdictBadge
+          postId={p.id}
+          onLiePercentChange={setAiLiePercent}
+        />
+      </div>
 
       {/* アクション */}
       <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -414,7 +507,9 @@ export default function PostCard({ p }: { p: Post }) {
         <button
           onClick={toggleLike}
           disabled={pendingLike}
-          className={`px-2 py-1 rounded border ${liked ? "bg-pink-50 border-pink-300" : "bg-gray-50"} disabled:opacity-60`}
+          className={`px-2 py-1 rounded border ${
+            liked ? "bg-pink-50 border-pink-300" : "bg-gray-50"
+          } disabled:opacity-60`}
           title="いいね"
         >
           ♥ {likes}
@@ -424,7 +519,11 @@ export default function PostCard({ p }: { p: Post }) {
         <button
           onClick={toggleBoost}
           disabled={pendingBoost}
-          className={`px-2 py-1 rounded border ${boosted ? "bg-purple-50 border-purple-300" : "bg-gray-50"} disabled:opacity-60`}
+          className={`px-2 py-1 rounded border ${
+            boosted
+              ? "bg-purple-50 border-purple-300"
+              : "bg-gray-50"
+          } disabled:opacity-60`}
           title="拡散（フォロワーに広める）"
         >
           🚀 {boosts}
@@ -435,7 +534,11 @@ export default function PostCard({ p }: { p: Post }) {
           <button
             onClick={() => castVote(1)}
             disabled={pendingVote}
-            className={`px-2 py-1 rounded border ${myVote === 1 ? "bg-green-50 border-green-300" : "bg-gray-50"} disabled:opacity-60`}
+            className={`px-2 py-1 rounded border ${
+              myVote === 1
+                ? "bg-green-50 border-green-300"
+                : "bg-gray-50"
+            } disabled:opacity-60`}
             title="本当だと思う"
           >
             ✅ {voteTrue}
@@ -443,7 +546,11 @@ export default function PostCard({ p }: { p: Post }) {
           <button
             onClick={() => castVote(-1)}
             disabled={pendingVote}
-            className={`px-2 py-1 rounded border ${myVote === -1 ? "bg-red-50 border-red-300" : "bg-gray-50"} disabled:opacity-60`}
+            className={`px-2 py-1 rounded border ${
+              myVote === -1
+                ? "bg-red-50 border-red-300"
+                : "bg-gray-50"
+            } disabled:opacity-60`}
             title="嘘だと思う"
           >
             ❌ {voteFalse}
@@ -461,7 +568,11 @@ export default function PostCard({ p }: { p: Post }) {
                 key={key}
                 onClick={() => toggleLabel(key)}
                 disabled={pendingLabelKey === key}
-                className={`px-2 py-1 rounded border text-xs ${mine ? "bg-blue-50 border-blue-300" : "bg-gray-50"} disabled:opacity-60`}
+                className={`px-2 py-1 rounded border text-xs ${
+                  mine
+                    ? "bg-blue-50 border-blue-300"
+                    : "bg-gray-50"
+                } disabled:opacity-60`}
                 title={l.text}
               >
                 <span className="mr-1">{l.emoji}</span>
@@ -473,13 +584,24 @@ export default function PostCard({ p }: { p: Post }) {
 
         {/* 返信/スレッド */}
         <div className="flex items-center gap-2 ml-auto">
-          <button onClick={() => setShowThread((v) => !v)} className="px-2 py-1 rounded border bg-gray-50" title="この投稿の返信を表示/非表示">
+          <button
+            onClick={() => setShowThread((v) => !v)}
+            className="px-2 py-1 rounded border bg-gray-50"
+            title="この投稿の返信を表示/非表示"
+          >
             💬 {replyCount}
           </button>
-          <Link href={`/p/${p.id}`} className="px-2 py-1 rounded border bg-gray-50" title="スレッドページへ">
+          <Link
+            href={`/p/${p.id}`}
+            className="px-2 py-1 rounded border bg-gray-50"
+            title="スレッドページへ"
+          >
             ↗ スレッド
           </Link>
-          <button onClick={() => setShowReply((v) => !v)} className="px-2 py-1 rounded border bg-gray-50">
+          <button
+            onClick={() => setShowReply((v) => !v)}
+            className="px-2 py-1 rounded border bg-gray-50"
+          >
             返信する
           </button>
         </div>
@@ -495,10 +617,17 @@ export default function PostCard({ p }: { p: Post }) {
             placeholder="返信を入力…"
           />
           <div className="flex gap-2">
-            <button onClick={submitReply} disabled={replying || !replyText.trim()} className="px-3 py-1 rounded bg-blue-600 text-white disabled:opacity-50">
+            <button
+              onClick={submitReply}
+              disabled={replying || !replyText.trim()}
+              className="px-3 py-1 rounded bg-blue-600 text-white disabled:opacity-50"
+            >
               返信を送信
             </button>
-            <button onClick={() => setShowReply(false)} className="px-3 py-1 rounded border">
+            <button
+              onClick={() => setShowReply(false)}
+              className="px-3 py-1 rounded border"
+            >
               キャンセル
             </button>
           </div>

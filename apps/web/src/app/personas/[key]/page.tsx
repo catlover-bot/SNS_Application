@@ -1,223 +1,634 @@
 "use client";
 
-import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import Image from "next/image";
 
-type Persona = {
+type PersonaDetail = {
   key: string;
-  title: string;
-  blurb: string | null;
-  long_desc: string | null;
-  image_url: string | null;
+  title: string | null;
   theme: string | null;
-  strengths: string[] | null;
-  pitfalls: string[] | null;
-  ideal_roles: string[] | null;
-  growth_tips: string[] | null;
-  sample_bio: string | null;
-  w: number | null;
+  vibe_tags: string[] | null;
+  talk_style: string | null;
+  blurb: string | null; // キャラ詳細
+  icon: string | null; // 画像 or 絵文字 or URL
+  relation_style?: string | null;
 };
 
-function normalizeKey(s: string) {
-  return s.replace(/^@/, "").trim().toLowerCase().replace(/-/g, "_");
+type Mode = "friendship" | "romance";
+
+type CompatRow = {
+  source_key: string;
+  target_key: string;
+  score: number | null;
+  // API によっては無い可能性もあるので全部 optional 扱い
+  target_title?: string | null;
+  target_theme?: string | null;
+  target_vibe_tags?: string[] | null;
+  target_icon?: string | null;
+  relation_label?: string | null;
+};
+
+const MODE_LABEL: Record<Mode, string> = {
+  friendship: "友情モード",
+  romance: "恋愛モード",
+};
+
+// 0〜1 または 0〜100 どちらのスコアでもそこそこいい感じに解釈する
+function percent(score: number | null | undefined): number {
+  if (typeof score !== "number" || Number.isNaN(score)) return 0;
+  const s = score;
+  if (s <= 0) return 0;
+  if (s <= 1) return Math.round(s * 100); // 0〜1
+  if (s <= 100) return Math.round(s); // 0〜100
+  return 100;
 }
 
-// 透明1px（最終手段）
-const TRANSPARENT_PNG_1PX =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAusB8vXkq2UAAAAASUVORK5CYII=";
+function themeLabel(theme: string | null | undefined): string {
+  switch (theme) {
+    case "social":
+      return "社交タイプ";
+    case "chaos":
+      return "カオスタイプ";
+    case "logic":
+      return "ロジックタイプ";
+    default:
+      return "未分類タイプ";
+  }
+}
+
+/**
+ * スコア＆モードから自動で「相性タイトル」をつける
+ * DB に relation_label があればそちらを優先し、なければこれを使う想定
+ */
+function autoRelationLabel(
+  mode: Mode,
+  score: number | null | undefined
+): string {
+  const p = percent(score);
+
+  if (mode === "romance") {
+    if (p >= 90) return "運命級ソウルメイト候補";
+    if (p >= 75) return "かなり甘々になれそうな関係";
+    if (p >= 60) return "現実的にちょうど良い相性バランス";
+    if (p >= 40) return "距離感の取り方がカギな相性";
+    return "ハマると沼るスリリングなコンビ";
+  } else {
+    // friendship
+    if (p >= 90) return "相棒レベルの親友コンビ";
+    if (p >= 75) return "安心感バツグンのチームメイト";
+    if (p >= 60) return "噛み合うところ多めのフレンド";
+    if (p >= 40) return "クセはあるけど面白い相棒";
+    return "距離感むずいスパイス相性";
+  }
+}
+
+/**
+ * icon カラム or key から画像/絵文字を決める
+ */
+function resolveIcon(
+  icon: string | null | undefined,
+  key: string | null | undefined
+): { isImage: boolean; value: string } {
+  const raw = icon?.trim();
+  const safeKey = (key && key.trim()) || "default";
+
+  if (raw) {
+    if (
+      raw.startsWith("http://") ||
+      raw.startsWith("https://") ||
+      raw.startsWith("/")
+    ) {
+      return { isImage: true, value: raw };
+    }
+
+    if (raw.length <= 3) {
+      return { isImage: false, value: raw };
+    }
+
+    const base =
+      raw.endsWith(".png") || raw.endsWith(".jpg") || raw.endsWith(".jpeg")
+        ? raw
+        : `${raw}.png`;
+
+    return { isImage: true, value: `/persona-images/${base}` };
+  }
+
+  return {
+    isImage: true,
+    value: `/persona-images/${safeKey}.png`,
+  };
+}
 
 export default function PersonaDetailPage() {
-  const params = useParams<{ key?: string }>();
-  const sp = useSearchParams();
+  const params = useParams<{ key: string }>();
+  const personaKey =
+    typeof params.key === "string"
+      ? decodeURIComponent(params.key)
+      : "unknown";
 
-  // 1) /personas/[key] → 2) ?key= → 3) pathname
-  const raw = useMemo(() => {
-    const p = typeof params?.key === "string" ? decodeURIComponent(params.key) : "";
-    const q = sp?.get("key") ? decodeURIComponent(sp.get("key")!) : "";
-    let path = "";
-    if (typeof window !== "undefined") {
-      const m = window.location.pathname.match(/\/personas\/([^\/?#]+)/i);
-      path = m ? decodeURIComponent(m[1]) : "";
-    }
-    return p || q || path || "";
-  }, [params, sp]);
+  const [persona, setPersona] = useState<PersonaDetail | null>(null);
+  const [loadingPersona, setLoadingPersona] = useState(true);
+  const [personaError, setPersonaError] = useState<string | null>(null);
 
-  const key = useMemo(() => normalizeKey(raw), [raw]);
+  const [mode, setMode] = useState<Mode>("friendship");
+  const [compat, setCompat] = useState<{
+    friendship: CompatRow[] | null;
+    romance: CompatRow[] | null;
+  }>({
+    friendship: null,
+    romance: null,
+  });
+  const [compatError, setCompatError] = useState<string | null>(null);
+  const [loadingCompat, setLoadingCompat] = useState(false);
 
-  const [persona, setPersona] = useState<Persona | null>(null);
-  const [hot, setHot] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
+  // 相性相手の persona 詳細キャッシュ
+  const [compatPersonaMap, setCompatPersonaMap] = useState<
+    Record<string, PersonaDetail | undefined>
+  >({});
 
-  // フォールバック制御
-  const [imgSrc, setImgSrc] = useState<string | null>(null);
-  const [tried, setTried] = useState<Set<string>>(new Set());
-
+  // --- キャラ詳細の取得（自分自身：persona_defs から） ---
   useEffect(() => {
     let alive = true;
+    setLoadingPersona(true);
+    setPersonaError(null);
 
     (async () => {
-      if (!key) {
-        setErr(`key が空です。（raw="${raw}" / normalized="${key}"）`);
-        setLoading(false);
-        return;
-      }
-
-      setLoading(true);
-      setErr(null);
-
       try {
-        // 詳細API
-        const res = await fetch(`/api/personas/${encodeURIComponent(key)}`, { cache: "no-store" });
-        const text = await res.text();
-        if (!res.ok) throw new Error(text || res.statusText);
-        const json = JSON.parse(text);
+        const res = await fetch(
+          `/api/persona_defs?key=${encodeURIComponent(personaKey)}`
+        );
+        if (!res.ok) {
+          const t = await res.text();
+          console.error(
+            "[persona detail page] persona api error",
+            res.status,
+            t
+          );
+          throw new Error(t || res.statusText);
+        }
+        const data = (await res.json()) as PersonaDetail;
         if (!alive) return;
-
-        const pr = json.persona as Persona;
-        setPersona(pr);
-        setHot(Array.isArray(json.hot) ? json.hot : []);
-
-        // ★ 画像候補（ローカル最優先 → _missing → 最後に外部 → 1px）
-        const candidates = [
-          `/persona-images/${encodeURIComponent(pr.key)}.png`,
-          `/persona-images/${encodeURIComponent(pr.key)}_legend.png`,
-          `/persona-images/${encodeURIComponent(pr.key)}_lite.png`,
-          "/persona-images/_missing.png",
-          pr.image_url || "",  // ← 外部URLは最後に試す（問題の切り分けのため）
-          TRANSPARENT_PNG_1PX,
-        ].filter(Boolean);
-
-        setTried(new Set());
-        setImgSrc(candidates[0]);
+        setPersona(data);
       } catch (e: any) {
+        console.error("[persona detail page] persona error", e);
         if (!alive) return;
-        setErr(e?.message ?? "failed to load persona");
+        setPersonaError("キャラ情報の取得に失敗しました。");
+        setPersona(null);
       } finally {
-        if (alive) setLoading(false);
+        if (alive) setLoadingPersona(false);
       }
     })();
 
     return () => {
       alive = false;
     };
-  }, [key, raw]);
+  }, [personaKey]);
 
-  const handleImgError = () => {
-    if (!persona) return;
-    const candidates = [
-      `/persona-images/${encodeURIComponent(persona.key)}.png`,
-      `/persona-images/${encodeURIComponent(persona.key)}_legend.png`,
-      `/persona-images/${encodeURIComponent(persona.key)}_lite.png`,
-      "/persona-images/_missing.png",
-      persona.image_url || "",
-      TRANSPARENT_PNG_1PX,
-    ].filter(Boolean);
+  // --- 相性データの取得（モード別） ---
+  useEffect(() => {
+    let alive = true;
+    setCompatError(null);
 
-    const used = new Set(tried);
-    const current = imgSrc ?? "";
-    used.add(current);
+    if (compat[mode] !== null) {
+      return;
+    }
 
-    const next = candidates.find((c) => !used.has(c));
-    setTried(used);
-    if (next) setImgSrc(next);
-  };
+    setLoadingCompat(true);
 
-  if (loading) {
-    return <div className="max-w-3xl mx-auto p-6 opacity-70">読み込み中…</div>;
-  }
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/personas/compat?key=${encodeURIComponent(
+            personaKey
+          )}&mode=${mode}`
+        );
+        if (!res.ok) {
+          const t = await res.text();
+          console.error(
+            "[persona detail page] compat api error",
+            res.status,
+            t
+          );
+          throw new Error(t || res.statusText);
+        }
+        const rows = (await res.json()) as CompatRow[];
+        if (!alive) return;
 
-  if (err || !persona) {
-    return (
-      <div className="max-w-3xl mx-auto p-6 space-y-3">
-        <h1 className="text-2xl font-bold">@{key || "?"}</h1>
-        <div className="rounded border bg-red-50 text-red-700 p-4 text-sm">
-          キャラ詳細の読み込みに失敗しました：{err || "not found"}
-        </div>
-        <div className="text-xs opacity-70">
-          <code>raw="{raw}" / normalized="{key}"</code>
-        </div>
-        <div className="mt-2">
-          <Link href="/personas" className="underline">キャラ図鑑へ戻る</Link>
-        </div>
-      </div>
+        setCompat((prev) => ({
+          ...prev,
+          [mode]: rows ?? [],
+        }));
+      } catch (e: any) {
+        console.error("[persona detail page] compat error", e);
+        if (!alive) return;
+        setCompatError("相性データの取得に失敗しました。");
+        setCompat((prev) => ({
+          ...prev,
+          [mode]: [],
+        }));
+      } finally {
+        if (alive) setLoadingCompat(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+    // compat 自体ではなく、対象モードだけを見る
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, personaKey, compat[mode]]);
+
+  const currentCompat: CompatRow[] = useMemo(
+    () => compat[mode] ?? [],
+    [compat, mode]
+  );
+
+  // --- 相性相手の persona 詳細をまとめて取得（persona_defs から） ---
+  useEffect(() => {
+    const rows = currentCompat;
+    if (!rows || rows.length === 0) return;
+
+    const keys = Array.from(
+      new Set(
+        rows
+          .map((r) => r.target_key)
+          .filter((k): k is string => !!k && k.trim().length > 0)
+      )
     );
-  }
+    if (!keys.length) return;
+
+    let cancelled = false;
+
+    (async () => {
+      for (const key of keys) {
+        if (cancelled) return;
+
+        // 既にキャッシュ済みならスキップ
+        if (compatPersonaMap[key]) continue;
+
+        try {
+          const res = await fetch(
+            `/api/persona_defs?key=${encodeURIComponent(key)}`
+          );
+          if (!res.ok) continue;
+          const data = (await res.json()) as PersonaDetail;
+          if (cancelled) return;
+          setCompatPersonaMap((prev) => {
+            if (prev[key]) return prev;
+            return { ...prev, [key]: data };
+          });
+        } catch {
+          // 無視して次へ
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentCompat]);
+
+  const [topCompat, restCompat] = useMemo(() => {
+    // target_key が入っている行だけ使う
+    const rowsWithKey = currentCompat.filter(
+      (r) => !!r.target_key && r.target_key.trim().length > 0
+    );
+    if (!rowsWithKey.length) return [null, []] as const;
+    const [first, ...rest] = rowsWithKey;
+    return [first, rest] as const;
+  }, [currentCompat]);
+
+  const iconInfo = resolveIcon(persona?.icon, personaKey);
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-6">
-      <header className="flex items-center gap-4">
-        <div className="w-24 h-24 rounded-xl border bg-white overflow-hidden">
-          <img
-            src={imgSrc ?? ""}
-            alt={persona.title}
-            className="w-full h-full object-contain"
-            onError={handleImgError}
-          />
-        </div>
-        <div className="min-w-0">
-          <h1 className="text-2xl font-bold truncate">{persona.title}</h1>
-          <div className="text-sm opacity-70 truncate">@{persona.key}</div>
-        </div>
-        <div className="ml-auto">
-          <Link href="/personas" className="underline">図鑑に戻る</Link>
-        </div>
-      </header>
+    <div className="space-y-6">
+      <div className="text-sm mb-1">
+        <Link
+          href="/personas"
+          className="text-slate-500 hover:text-slate-700 inline-flex items-center gap-1"
+        >
+          ← キャラ図鑑へ戻る
+        </Link>
+      </div>
 
-      {persona.blurb && <p className="opacity-80">{persona.blurb}</p>}
-
-      {persona.long_desc && (
-        <section className="prose max-w-none whitespace-pre-wrap">{persona.long_desc}</section>
+      {personaError && (
+        <div className="text-xs text-red-600 mb-1">
+          キャラ情報の取得に失敗しました。（キー: {personaKey}）
+        </div>
       )}
 
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {persona.strengths?.length ? (
-          <div className="rounded border p-4 bg-white">
-            <h2 className="font-semibold mb-2">Strengths</h2>
-            <ul className="list-disc pl-5 space-y-1">{persona.strengths.map((s, i) => <li key={i}>{s}</li>)}</ul>
+      {/* キャラヘッダー */}
+      <section className="rounded-2xl border bg-white/80 px-4 py-4 sm:px-6 sm:py-5 flex gap-4 items-center">
+        <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center overflow-hidden shrink-0 border">
+          {iconInfo.isImage ? (
+            <Image
+              src={iconInfo.value}
+              alt={persona?.title || personaKey || "キャラアイコン"}
+              width={64}
+              height={64}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <span className="text-2xl">{iconInfo.value}</span>
+          )}
+        </div>
+        <div className="flex-1 min-w-0 space-y-1.5">
+          <div className="text-xs text-slate-400 break-all">
+            key: {personaKey}
           </div>
-        ) : null}
-        {persona.pitfalls?.length ? (
-          <div className="rounded border p-4 bg-white">
-            <h2 className="font-semibold mb-2">Pitfalls</h2>
-            <ul className="list-disc pl-5 space-y-1">{persona.pitfalls.map((s, i) => <li key={i}>{s}</li>)}</ul>
+          <div className="text-lg sm:text-xl font-semibold truncate">
+            {loadingPersona
+              ? "読み込み中…"
+              : persona?.title || personaKey || "（名称未設定）"}
           </div>
-        ) : null}
-        {persona.ideal_roles?.length ? (
-          <div className="rounded border p-4 bg-white">
-            <h2 className="font-semibold mb-2">Ideal Roles</h2>
-            <ul className="list-disc pl-5 space-y-1">{persona.ideal_roles.map((s, i) => <li key={i}>{s}</li>)}</ul>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] bg-slate-50 text-slate-700">
+              {themeLabel(persona?.theme)}
+            </span>
+            {(persona?.vibe_tags ?? [])
+              .slice(0, 4)
+              .map((tag) => (
+                <span
+                  key={tag}
+                  className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700"
+                >
+                  {tag}
+                </span>
+              ))}
           </div>
-        ) : null}
-        {persona.growth_tips?.length ? (
-          <div className="rounded border p-4 bg-white">
-            <h2 className="font-semibold mb-2">Growth Tips</h2>
-            <ul className="list-disc pl-5 space-y-1">{persona.growth_tips.map((s, i) => <li key={i}>{s}</li>)}</ul>
-          </div>
-        ) : null}
+        </div>
       </section>
 
-      {persona.sample_bio && (
-        <section className="rounded border p-4 bg-white">
-          <h2 className="font-semibold mb-2">Sample Bio</h2>
-          <pre className="whitespace-pre-wrap break-words text-sm opacity-80">{persona.sample_bio}</pre>
+      {/* キャラ詳細情報 */}
+      <section className="rounded-2xl border bg-slate-50 px-4 py-3 sm:px-6 sm:py-4">
+        <div className="text-xs font-semibold text-slate-600 mb-1">
+          キャラ詳細情報
+        </div>
+        <p className="text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">
+          {personaError
+            ? "キャラ詳細情報を読み込めませんでした。"
+            : persona?.blurb ?? "このキャラの詳細情報は準備中です。"}
+        </p>
+      </section>
+
+      {/* 話し方のクセ */}
+      {persona?.talk_style && (
+        <section className="rounded-2xl border bg-slate-50 px-4 py-3 sm:px-6 sm:py-4">
+          <div className="text-xs font-semibold text-slate-600 mb-1">
+            話し方のクセ
+          </div>
+          <p className="text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">
+            {persona.talk_style}
+          </p>
         </section>
       )}
 
-      <section className="rounded border p-4 bg-white">
-        <h2 className="font-semibold mb-3">関連投稿</h2>
-        {hot.length === 0 ? (
-          <div className="text-sm opacity-70">まだ関連投稿はありません。</div>
+      {/* ソウルメイト候補 */}
+      <section className="rounded-2xl border bg-white/80 px-4 py-4 sm:px-6 sm:py-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex-1">
+            <div className="text-xs font-semibold text-sky-600 tracking-wide">
+              ソウルメイト候補
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              あなたのキャラと特に相性が良い{" "}
+              <span className="font-semibold">友情モード / 恋愛モード</span>
+              の相手キャラをスコア付きで表示します。
+            </p>
+          </div>
+          <div className="inline-flex rounded-full bg-slate-100 p-1 text-xs">
+            <button
+              type="button"
+              onClick={() => setMode("friendship")}
+              className={`px-3 py-1 rounded-full ${
+                mode === "friendship"
+                  ? "bg-white shadow-sm text-slate-900"
+                  : "text-slate-500"
+              }`}
+            >
+              友情モード
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("romance")}
+              className={`px-3 py-1 rounded-full ${
+                mode === "romance"
+                  ? "bg-white shadow-sm text-rose-700"
+                  : "text-slate-500"
+              }`}
+            >
+              恋愛モード
+            </button>
+          </div>
+        </div>
+
+        {compatError && (
+          <div className="text-xs text-red-600">{compatError}</div>
+        )}
+
+        {loadingCompat && !currentCompat.length ? (
+          <div className="text-xs text-slate-500 py-6 text-center">
+            相性データを読み込み中…
+          </div>
+        ) : !currentCompat.length ? (
+          <div className="text-xs text-slate-500 py-6 text-center border rounded-xl bg-slate-50">
+            まだこのキャラの相性データがありません。
+          </div>
         ) : (
-          <ul className="space-y-2 text-sm">
-            {hot.map((p, i) => (
-              <li key={i} className="border rounded p-2 bg-gray-50">
-                <div className="opacity-60 text-xs">{new Date(p.created_at).toLocaleString()}</div>
-                <div className="whitespace-pre-wrap">{p.text}</div>
-              </li>
-            ))}
-          </ul>
+          <>
+            {/* No.1 ソウルメイト候補 */}
+            {topCompat && (() => {
+              const tp = topCompat;
+              const targetPersona =
+                compatPersonaMap[tp.target_key] ?? null;
+
+              const displayTitle =
+                targetPersona?.title ||
+                tp.target_title ||
+                "（名称未設定）";
+
+              const displayKey =
+                targetPersona?.key || tp.target_key || "unknown";
+
+              const displayVibes =
+                targetPersona?.vibe_tags ??
+                tp.target_vibe_tags ??
+                [];
+
+              const icon = resolveIcon(
+                targetPersona?.icon ?? tp.target_icon ?? null,
+                targetPersona?.key ?? tp.target_key ?? "unknown"
+              );
+
+              // ★ 相性タイトル（DB の relation_label があれば優先）
+              const relationLabel =
+                tp.relation_label ?? autoRelationLabel(mode, tp.score);
+
+              return (
+                <div className="rounded-2xl border bg-gradient-to-br from-rose-50 via-amber-50 to-sky-50 px-4 py-4 sm:px-6 sm:py-5 flex flex-col sm:flex-row gap-3 sm:gap-4">
+                  {/* 相性相手のアイコン */}
+                  <div className="w-12 h-12 rounded-xl bg-white/80 flex items-center justify-center overflow-hidden shrink-0 border border-rose-100">
+                    {icon.isImage ? (
+                      <Image
+                        src={icon.value}
+                        alt={`${displayTitle} のアイコン`}
+                        width={48}
+                        height={48}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-xl">{icon.value}</span>
+                    )}
+                  </div>
+
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    <div className="text-[10px] font-semibold text-rose-500 uppercase tracking-wide">
+                      ソウルメイト候補 No.1
+                    </div>
+                    <div className="text-base sm:text-lg font-semibold truncate">
+                      {displayTitle}
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      @{displayKey}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      <span className="inline-flex items-center rounded-full bg-white/70 px-2 py-0.5 text-[11px] text-rose-700 border border-rose-100">
+                        {MODE_LABEL[mode]} {percent(tp.score)}%{" "}
+                        {mode === "romance" ? "💘" : "🤝"}
+                      </span>
+                      {relationLabel && (
+                        <span className="inline-flex items-center rounded-full bg-white/80 px-2 py-0.5 text-[11px] text-slate-700 border border-slate-100">
+                          {relationLabel}
+                        </span>
+                      )}
+
+                      {displayVibes.slice(0, 3).map((tag) => (
+                        <span
+                          key={tag}
+                          className="inline-flex items-center rounded-full bg-white/60 px-2 py-0.5 text-[11px] text-slate-700 border border-slate-100"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center sm:items-start justify-end">
+                    <div className="text-right space-y-1">
+                      <div className="text-xs text-slate-500">
+                        {MODE_LABEL[mode]}
+                      </div>
+                      <div className="text-3xl font-semibold">
+                        {percent(tp.score)}
+                        <span className="text-base ml-1">%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* その他候補 */}
+            {restCompat.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {restCompat.map((row) => {
+                  const targetPersona =
+                    compatPersonaMap[row.target_key] ?? null;
+
+                  const displayTitle =
+                    targetPersona?.title ||
+                    row.target_title ||
+                    "（名称未設定）";
+
+                  const displayKey =
+                    targetPersona?.key ||
+                    row.target_key ||
+                    "unknown";
+
+                  const displayVibes =
+                    targetPersona?.vibe_tags ??
+                    row.target_vibe_tags ??
+                    [];
+
+                  const icon = resolveIcon(
+                    targetPersona?.icon ??
+                      row.target_icon ??
+                      null,
+                    targetPersona?.key ??
+                      row.target_key ??
+                      "unknown"
+                  );
+
+                  // ★ ここも同じく、 relation_label → 自動タイトル fallback
+                  const relationLabel =
+                    row.relation_label ?? autoRelationLabel(mode, row.score);
+
+                  return (
+                    <div
+                      key={`${row.target_key}-${mode}`}
+                      className="rounded-xl border bg-white/80 px-4 py-3 flex flex-col gap-2"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start gap-2 min-w-0">
+                          {/* 相性相手のアイコン（小さめ） */}
+                          <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center overflow-hidden shrink-0 border border-slate-100">
+                            {icon.isImage ? (
+                              <Image
+                                src={icon.value}
+                                alt={`${displayTitle} のアイコン`}
+                                width={32}
+                                height={32}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <span className="text-lg">
+                                {icon.value}
+                              </span>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold truncate">
+                              {displayTitle}
+                            </div>
+                            <div className="text-[11px] text-slate-500 truncate">
+                              @{displayKey}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-[11px] text-slate-500">
+                            {MODE_LABEL[mode]}
+                          </div>
+                          <div className="text-xl font-semibold">
+                            {percent(row.score)}
+                            <span className="text-xs ml-1">%</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 mt-1">
+                        {relationLabel && (
+                          <span className="inline-flex items-center rounded-full bg-slate-50 px-2 py-0.5 text-[11px] text-slate-700 border border-slate-100">
+                            {relationLabel}
+                          </span>
+                        )}
+
+                        {displayVibes.slice(0, 2).map((tag) => (
+                          <span
+                            key={tag}
+                            className="inline-flex items-center rounded-full bg-slate-50 px-2 py-0.5 text-[11px] text-slate-700 border border-slate-100"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
       </section>
     </div>
