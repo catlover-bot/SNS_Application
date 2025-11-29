@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { supabaseClient as getSupabase } from "@/lib/supabase/client";
 import FollowButton from "@/components/FollowButton";
 import PostCard from "@/components/PostCard";
+import ProfileCharacterRadar from "@/components/ProfileCharacterRadar";
 
 type Profile = {
   id: string;
@@ -16,12 +17,16 @@ type Profile = {
 };
 
 export default function UserPage() {
-  // ✅ 関数からクライアント“実体”を 1 回だけ生成
+  // ✅ Supabase クライアントは 1 回だけ生成
   const supabase = useMemo(() => getSupabase(), []);
 
   const params = useParams();
-  // useParams() は string | string[] の可能性がある
-  const handleParam = (params as Record<string, unknown>)?.handle as string | string[] | undefined;
+  // useParams() は string | string[] の可能性があるのでガード
+  const handleParam = (params as Record<string, unknown>)?.handle as
+    | string
+    | string[]
+    | undefined;
+
   const handle =
     typeof handleParam === "string"
       ? handleParam
@@ -61,7 +66,7 @@ export default function UserPage() {
 
       setProfile(p.data as Profile);
 
-      // 投稿取得（最新50件）
+      // 投稿取得（最新 50 件）
       const r = await supabase
         .from("posts")
         .select("*")
@@ -85,33 +90,38 @@ export default function UserPage() {
   }
 
   if (loading) {
-    return <div className="p-6 opacity-70">@{handle} のページを読み込み中…</div>;
-  }
-
-  if (notFound) {
     return (
-      <div className="p-6 space-y-2">
-        <h1 className="text-xl font-semibold">@{handle}</h1>
-        <p className="text-sm opacity-70">このユーザーは見つかりませんでした。</p>
+      <div className="p-6 opacity-70">
+        @{handle} のページを読み込み中…
       </div>
     );
   }
 
-  // profile は存在する前提
-  const userId = profile!.id;
+  if (notFound || !profile) {
+    return (
+      <div className="p-6 space-y-2">
+        <h1 className="text-xl font-semibold">@{handle}</h1>
+        <p className="text-sm opacity-70">
+          このユーザーは見つかりませんでした。
+        </p>
+      </div>
+    );
+  }
+
+  const userId = profile.id;
 
   return (
     <div className="p-6 space-y-6">
       {/* ヘッダー */}
       <div className="flex items-center gap-4">
         <img
-          src={profile?.avatar_url ?? "https://placehold.co/80x80"}
-          alt={profile?.display_name ?? profile?.handle ?? "avatar"}
+          src={profile.avatar_url ?? "https://placehold.co/80x80"}
+          alt={profile.display_name ?? profile.handle ?? "avatar"}
           className="w-16 h-16 rounded-full border object-cover"
         />
         <div className="min-w-0">
           <div className="text-xl font-semibold truncate">
-            {profile?.display_name ?? profile?.handle ?? `@${handle}`}
+            {profile.display_name ?? profile.handle ?? `@${handle}`}
           </div>
           <div className="text-sm opacity-70 truncate">@{handle}</div>
         </div>
@@ -121,14 +131,21 @@ export default function UserPage() {
       </div>
 
       {/* Bio */}
-      {profile?.bio && (
-        <p className="opacity-80 whitespace-pre-wrap break-words">{profile.bio}</p>
+      {profile.bio && (
+        <p className="opacity-80 whitespace-pre-wrap break-words">
+          {profile.bio}
+        </p>
       )}
+
+      {/* ▼ 追加：AI キャラレーダー（投稿全体の AI サマリ） */}
+      <ProfileCharacterRadar handle={handle} />
 
       {/* 投稿一覧 */}
       <section className="space-y-3">
         {posts.length === 0 ? (
-          <div className="opacity-70 text-sm">@{handle} の投稿はまだありません。</div>
+          <div className="opacity-70 text-sm">
+            @{handle} の投稿はまだありません。
+          </div>
         ) : (
           posts.map((p) => <PostCard key={p.id} p={p} />)
         )}

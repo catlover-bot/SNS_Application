@@ -6,6 +6,7 @@ import Link from "next/link";
 import PersonaRadar from "@/components/PersonaRadar";
 import PromptBar from "@/components/PromptBar";
 import PersonaBadge from "@/components/PersonaBadge";
+import AiTimelineSummaryPanel from "@/components/AiTimelineSummaryPanel";
 
 type Soulmate = {
   user_id: string;
@@ -59,15 +60,23 @@ export default function PersonaDashboardPage() {
         </p>
       </div>
 
-      {/* 上段：レーダー + プロンプトバー */}
+      {/* 上段：レーダー + プロンプトバー + タイムラインAIサマリー */}
       <div className="grid gap-4 md:grid-cols-2">
         <div className="border rounded-xl p-4 bg-white shadow-sm">
-          <h2 className="text-sm font-semibold mb-2">あなたのキャラレーダー</h2>
+          <h2 className="text-sm font-semibold mb-2">
+            あなたのキャラレーダー
+          </h2>
           <PersonaRadar />
         </div>
-        <div className="border rounded-xl p-4 bg-white shadow-sm">
-          <h2 className="text-sm font-semibold mb-2">AI に相談してみる</h2>
-          <PromptBar />
+
+        <div className="space-y-4">
+          <div className="border rounded-xl p-4 bg-white shadow-sm">
+            <h2 className="text-sm font-semibold mb-2">AI に相談してみる</h2>
+            <PromptBar />
+          </div>
+
+          {/* Premium想定：タイムライン一括AI分析 */}
+          <AiTimelineSummaryPanel />
         </div>
       </div>
 
@@ -76,7 +85,9 @@ export default function PersonaDashboardPage() {
         <div className="flex items-center gap-2 mb-2">
           <span className="text-pink-500 text-lg">💘</span>
           <div>
-            <h2 className="text-sm font-semibold">恋愛モード：ソウルメイト候補</h2>
+            <h2 className="text-sm font-semibold">
+              恋愛モード：ソウルメイト候補
+            </h2>
             <p className="text-xs text-gray-500">
               あなたのメインキャラ × 恋愛相性スコアで、「カップルになると良さそうな相手」をピックアップしています。
             </p>
@@ -84,7 +95,9 @@ export default function PersonaDashboardPage() {
         </div>
 
         {loading && (
-          <p className="text-sm text-gray-500">ソウルメイト候補を計算中です…</p>
+          <p className="text-sm text-gray-500">
+            ソウルメイト候補を計算中です…
+          </p>
         )}
 
         {!loading && error && (
@@ -133,7 +146,9 @@ export default function PersonaDashboardPage() {
                       {name}
                     </Link>
                     {s.handle && (
-                      <div className="text-xs text-gray-500">@{s.handle}</div>
+                      <div className="text-xs text-gray-500">
+                        @{s.handle}
+                      </div>
                     )}
 
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">

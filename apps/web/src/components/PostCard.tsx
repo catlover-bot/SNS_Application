@@ -141,6 +141,23 @@ export default function PostCard({ p }: { p: Post }) {
   // 🔥 LLM 由来の「嘘％」（AI 判定バッジから通知される）
   const [aiLiePercent, setAiLiePercent] = useState<number | null>(null);
 
+  // Hydration エラー対策：ロケール固定でフォーマット
+  const createdAtLabel = useMemo(() => {
+    try {
+      return new Intl.DateTimeFormat("ja-JP", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      }).format(new Date(p.created_at));
+    } catch {
+      return p.created_at;
+    }
+  }, [p.created_at]);
+
   // 初期ロード
   useEffect(() => {
     let alive = true;
@@ -475,7 +492,7 @@ export default function PostCard({ p }: { p: Post }) {
         </Link>
         <span className="opacity-60">·</span>
         <time dateTime={p.created_at} className="opacity-60">
-          {new Date(p.created_at).toLocaleString()}
+          {createdAtLabel}
         </time>
         <div className="ml-auto flex items-center gap-2">
           {author.id && (
@@ -497,6 +514,7 @@ export default function PostCard({ p }: { p: Post }) {
         </div>
         <AiPostVerdictBadge
           postId={p.id}
+          text={content}
           onLiePercentChange={setAiLiePercent}
         />
       </div>
