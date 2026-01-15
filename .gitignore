@@ -11,5 +11,7 @@ build/
 *.log
 npm-debug.log*
 pnpm-debug.log*
+*:Zone.Identifier
+
 # lockfiles (keep pnpm lock if desired)
 # package-lock.json

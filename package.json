@@ -2,7 +2,10 @@
   "name": "sns-application",
   "private": true,
   "packageManager": "pnpm@10.19.0",
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev --parallel",
@@ -24,6 +27,11 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "bugs": { "url": "https://github.com/catlover-bot/SNS_Application/issues" },
-  "homepage": "https://github.com/catlover-bot/SNS_Application#readme"
+  "bugs": {
+    "url": "https://github.com/catlover-bot/SNS_Application/issues"
+  },
+  "homepage": "https://github.com/catlover-bot/SNS_Application#readme",
+  "dependencies": {
+    "sharp": "^0.34.4"
+  }
 }

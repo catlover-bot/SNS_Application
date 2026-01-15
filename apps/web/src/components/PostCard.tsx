@@ -1,33 +1,56 @@
+// apps/web/src/components/PostCard.tsx
 "use client";
 
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { supabaseClient as supabase } from "@/lib/supabase/client";
+import FollowButton from "@/components/FollowButton";
+import Replies from "@/components/Replies";
+import { LABELS, type LabelKey } from "@/lib/labels";
+import { AiPostVerdictBadge } from "@/components/AiPostVerdictBadge";
 
-export type Post = {
+type Post = {
   id: string;
-  // 本文は text（なければ互換用 body）
+  created_at: string;
   text?: string | null;
   body?: string | null;
 
-  created_at: string;
-  author?: string | null;            // auth.users.id
-  username?: string | null;          // profiles.username
-  display_name?: string | null;      // profiles.display_name
-  avatar_url?: string | null;        // profiles.avatar_url
+  author?: string | null;
+  author_handle?: string | null;
+  author_display?: string | null;
+  author_avatar?: string | null;
 
-  score?: number | null;             // 嘘スコア(0-1)
-  likes?: number | null;             // 集計済みが入る場合あり
-  media_urls?: string[] | null;      // 1枚だけ表示
-  analysis?: any | null;             // 画像診断結果(JSON)
+  reply_count?: number | null;
+  score?: number | null; // 0..1 (ローカルの嘘スコア)
 };
 
-function ScoreBadge({ score }: { score: number }) {
-  const pct = Math.round(score * 100);
-  const hue = 120 - Math.min(120, pct); // 緑→赤
+function ScoreBadge({
+  score,
+  aiPercent,
+}: {
+  score: number | null | undefined;
+  aiPercent?: number | null;
+}) {
+  let pct: number;
+
+  if (typeof aiPercent === "number") {
+    // AI 由来の「嘘％」がある場合はそれを優先
+    pct = Math.max(0, Math.min(100, Math.round(aiPercent)));
+  } else {
+    // 従来どおり score (0..1) から計算
+    const s = Math.max(0, Math.min(1, Number(score ?? 0) || 0));
+    pct = Math.round(s * 100);
+  }
+
+  const hue = 120 - Math.min(120, pct);
+
   return (
     <span
       className="text-xs px-2 py-1 rounded-full border"
-      style={{ background: `hsl(${hue} 70% 95%)`, borderColor: `hsl(${hue} 50% 60%)` }}
+      style={{
+        background: `hsl(${hue} 70% 95%)`,
+        borderColor: `hsl(${hue} 50% 60%)`,
+      }}
       title={`嘘っぽさ ${pct}%`}
     >
       嘘 {pct}%
@@ -36,58 +59,185 @@ function ScoreBadge({ score }: { score: number }) {
 }
 
 export default function PostCard({ p }: { p: Post }) {
+  // ✅ Supabase クライアントを1回だけ生成
+  const sb = useMemo(() => supabase(), []);
+
   const content = (p.text ?? p.body ?? "").toString();
 
+  // 作者
+  const [author, setAuthor] = useState<{
+    id?: string | null;
+    handle?: string | null;
+    name?: string | null;
+    avatar?: string | null;
+  }>({
+    id: p.author ?? null,
+    handle: p.author_handle ?? null,
+    name: p.author_display ?? null,
+    avatar: p.author_avatar ?? null,
+  });
+
+  useEffect(() => {
+    if (!author.id || author.handle) return;
+    (async () => {
+      const r = await sb
+        .from("profiles")
+        .select("handle,display_name,avatar_url")
+        .eq("id", author.id)
+        .maybeSingle();
+      if (r.data) {
+        setAuthor((a) => ({
+          ...a,
+          handle: r.data!.handle,
+          name: r.data!.display_name ?? r.data!.handle,
+          avatar: r.data!.avatar_url ?? a.avatar,
+        }));
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [author.id, sb]);
+
   // いいね
-  const [likes, setLikes] = useState<number>(Number(p.likes ?? 0));
+  const [likes, setLikes] = useState<number>(0);
   const [liked, setLiked] = useState(false);
   const [pendingLike, setPendingLike] = useState(false);
 
-  // 真偽投票
+  // 🚀 拡散（Boost）
+  const [boosts, setBoosts] = useState<number>(0);
+  const [boosted, setBoosted] = useState(false);
+  const [pendingBoost, setPendingBoost] = useState(false);
+
+  // 真偽
   const [voteTrue, setVoteTrue] = useState(0);
   const [voteFalse, setVoteFalse] = useState(0);
-  const [myVote, setMyVote] = useState<1 | -1 | 0>(0);
+  const [myVote, setMyVote] = useState<1 | 0 | -1>(0);
   const [pendingVote, setPendingVote] = useState(false);
 
-  // 自分=著者？
-  const [meId, setMeId] = useState<string | null>(null);
-  const isOwner = meId && p.author && meId === p.author;
+  // ラベル
+  const labelKeys = useMemo(
+    () => LABELS.map((l) => l.key) as readonly LabelKey[],
+    []
+  );
+  const [labelCounts, setLabelCounts] = useState<Record<LabelKey, number>>(
+    Object.fromEntries(labelKeys.map((k) => [k, 0])) as Record<
+      LabelKey,
+      number
+    >
+  );
+  const [myLabels, setMyLabels] = useState<Set<LabelKey>>(new Set());
+  const [pendingLabelKey, setPendingLabelKey] = useState<LabelKey | null>(
+    null
+  );
 
-  // 初期読み込み（いいね／投票／自分ID）
+  // スレッド/返信
+  const [showThread, setShowThread] = useState(false);
+  const [showReply, setShowReply] = useState(false);
+  const [replyText, setReplyText] = useState("");
+  const [replying, setReplying] = useState(false);
+  const [replyCount, setReplyCount] = useState<number>(
+    p.reply_count ?? 0
+  );
+
+  // 🔥 LLM 由来の「嘘％」（AI 判定バッジから通知される）
+  const [aiLiePercent, setAiLiePercent] = useState<number | null>(null);
+
+  // Hydration エラー対策：ロケール固定でフォーマット
+  const createdAtLabel = useMemo(() => {
+    try {
+      return new Intl.DateTimeFormat("ja-JP", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      }).format(new Date(p.created_at));
+    } catch {
+      return p.created_at;
+    }
+  }, [p.created_at]);
+
+  // 初期ロード
   useEffect(() => {
     let alive = true;
     (async () => {
-      const { data: auth } = await supabase.auth.getUser();
-      if (alive) setMeId(auth.user?.id ?? null);
-
-      // いいね総数
-      const likesHead = await supabase
+      // いいね件数
+      const l = await sb
         .from("reactions")
-        .select("user_id", { count: "exact", head: true })
+        .select("id", { count: "exact", head: true })
         .eq("post_id", p.id)
         .eq("kind", "like");
-      if (alive && typeof likesHead.count === "number") setLikes(likesHead.count);
+      if (alive && typeof l.count === "number") setLikes(l.count);
 
-      // 自分のいいね
-      if (auth.user) {
-        const me = await supabase
+      // 🚀 ブースト件数
+      const b = await sb
+        .from("reactions")
+        .select("id", { count: "exact", head: true })
+        .eq("post_id", p.id)
+        .eq("kind", "boost");
+      if (alive && typeof b.count === "number") setBoosts(b.count);
+
+      // 自分の状態
+      const {
+        data: { user },
+      } = await sb.auth.getUser();
+
+      if (user) {
+        // 自分の「いいね」
+        const meLike = await sb
           .from("reactions")
           .select("user_id")
           .eq("post_id", p.id)
           .eq("kind", "like")
-          .eq("user_id", auth.user.id)
+          .eq("user_id", user.id)
           .maybeSingle();
-        if (alive) setLiked(!!me.data);
+        if (alive) setLiked(!!meLike.data);
+
+        // 自分の「Boost」
+        const meBoost = await sb
+          .from("reactions")
+          .select("user_id")
+          .eq("post_id", p.id)
+          .eq("kind", "boost")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (alive) setBoosted(!!meBoost.data);
+
+        // 真偽投票
+        const mv = await sb
+          .from("truth_votes")
+          .select("value")
+          .eq("post_id", p.id)
+          .eq("voter", user.id)
+          .maybeSingle();
+        if (alive)
+          setMyVote((mv.data?.value as 1 | -1 | undefined) ?? 0);
+
+        // 自分のラベル
+        const myLs = await sb
+          .from("post_labels")
+          .select("label")
+          .eq("post_id", p.id)
+          .eq("user_id", user.id);
+        if (alive) {
+          const set = new Set<LabelKey>();
+          (myLs.data ?? []).forEach((r: any) => {
+            if (labelKeys.includes(r.label as LabelKey))
+              set.add(r.label as LabelKey);
+          });
+          setMyLabels(set);
+        }
       }
 
-      // 投票カウント
+      // 真偽件数
       const [t1, t2] = await Promise.all([
-        supabase
+        sb
           .from("truth_votes")
           .select("id", { count: "exact", head: true })
           .eq("post_id", p.id)
           .eq("value", 1),
-        supabase
+        sb
           .from("truth_votes")
           .select("id", { count: "exact", head: true })
           .eq("post_id", p.id)
@@ -98,175 +248,412 @@ export default function PostCard({ p }: { p: Post }) {
         if (typeof t2.count === "number") setVoteFalse(t2.count);
       }
 
-      // 自分の投票
-      if (auth.user) {
-        const mv = await supabase
-          .from("truth_votes")
-          .select("value")
-          .eq("post_id", p.id)
-          .eq("voter", auth.user.id)
-          .maybeSingle();
-        if (alive) setMyVote((mv.data?.value as 1 | -1 | undefined) ?? 0);
+      // ラベル件数
+      const allLabels = await sb
+        .from("post_labels")
+        .select("label")
+        .eq("post_id", p.id);
+      if (alive) {
+        const counts = Object.fromEntries(
+          labelKeys.map((k) => [k, 0])
+        ) as Record<LabelKey, number>;
+        (allLabels.data ?? []).forEach((r: any) => {
+          const k = r.label as LabelKey;
+          if (k in counts) counts[k] += 1;
+        });
+        setLabelCounts(counts);
       }
     })();
-    return () => { alive = false; };
-  }, [p.id]);
+    return () => {
+      alive = false;
+    };
+  }, [p.id, labelKeys, sb]);
+
+  async function ensureLoginOrRedirect() {
+    const {
+      data: { user },
+    } = await sb.auth.getUser();
+    if (!user) {
+      location.href = `/login?next=${encodeURIComponent(
+        location.pathname
+      )}`;
+      return null;
+    }
+    return user;
+  }
 
   // いいね
-  const onLike = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return (location.href = "/login?next=/");
+  async function toggleLike() {
     if (pendingLike) return;
+    const user = await ensureLoginOrRedirect();
+    if (!user) return;
     setPendingLike(true);
+
+    const prevLiked = liked,
+      prevLikes = likes;
+    const nextLiked = !prevLiked;
+    setLiked(nextLiked);
+    setLikes(prevLikes + (nextLiked ? 1 : -1));
+
     try {
-      if (liked) {
-        setLiked(false);
-        setLikes((v) => Math.max(0, v - 1));
-        await supabase
+      if (nextLiked) {
+        const { error } = await sb
+          .from("reactions")
+          .insert({ post_id: p.id, user_id: user.id, kind: "like" });
+        if (error) throw error;
+      } else {
+        const { error } = await sb
           .from("reactions")
           .delete()
           .eq("post_id", p.id)
           .eq("user_id", user.id)
           .eq("kind", "like");
-      } else {
-        setLiked(true);
-        setLikes((v) => v + 1);
-        await supabase.from("reactions").insert({ user_id: user.id, post_id: p.id, kind: "like" });
+        if (error) throw error;
       }
+    } catch {
+      setLiked(prevLiked);
+      setLikes(prevLikes);
     } finally {
       setPendingLike(false);
     }
-  };
+  }
 
-  // 真偽投票
-  const castVote = async (v: 1 | -1) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return (location.href = "/login?next=/");
-    if (pendingVote) return;
-    setPendingVote(true);
+  // 🚀 Boost
+  async function toggleBoost() {
+    if (pendingBoost) return;
+    const user = await ensureLoginOrRedirect();
+    if (!user) return;
+    setPendingBoost(true);
+
+    const prevBoosted = boosted,
+      prevBoosts = boosts;
+    const nextBoosted = !prevBoosted;
+    setBoosted(nextBoosted);
+    setBoosts(prevBoosts + (nextBoosted ? 1 : -1));
+
     try {
-      if (myVote === v) {
-        // 取り消し
-        setMyVote(0);
-        if (v === 1) setVoteTrue((x) => Math.max(0, x - 1));
-        else setVoteFalse((x) => Math.max(0, x - 1));
-        await supabase.from("truth_votes").delete().eq("post_id", p.id).eq("voter", user.id);
-      } else if (myVote === 0) {
-        // 新規
-        setMyVote(v);
-        if (v === 1) setVoteTrue((x) => x + 1); else setVoteFalse((x) => x + 1);
-        await supabase.from("truth_votes").insert({ post_id: p.id, voter: user.id, value: v });
+      if (nextBoosted) {
+        const { error } = await sb
+          .from("reactions")
+          .insert({ post_id: p.id, user_id: user.id, kind: "boost" });
+        if (error) throw error;
       } else {
-        // 反対側にスイッチ
-        if (myVote === 1) setVoteTrue((x) => Math.max(0, x - 1)); else setVoteFalse((x) => Math.max(0, x - 1));
-        setMyVote(v);
-        if (v === 1) setVoteTrue((x) => x + 1); else setVoteFalse((x) => x + 1);
-        await supabase.from("truth_votes").update({ value: v }).eq("post_id", p.id).eq("voter", user.id);
+        const { error } = await sb
+          .from("reactions")
+          .delete()
+          .eq("post_id", p.id)
+          .eq("user_id", user.id)
+          .eq("kind", "boost");
+        if (error) throw error;
       }
+    } catch {
+      setBoosted(prevBoosted);
+      setBoosts(prevBoosts);
+    } finally {
+      setPendingBoost(false);
+    }
+  }
+
+  // 真偽
+  async function castVote(v: 1 | -1) {
+    if (pendingVote) return;
+    const user = await ensureLoginOrRedirect();
+    if (!user) return;
+    setPendingVote(true);
+
+    const prev = myVote;
+    const prevTrue = voteTrue,
+      prevFalse = voteFalse;
+
+    let next: 1 | 0 | -1 = prev === v ? 0 : v;
+    let nt = prevTrue,
+      nf = prevFalse;
+    if (prev === 1) nt -= 1;
+    if (prev === -1) nf -= 1;
+    if (next === 1) nt += 1;
+    if (next === -1) nf += 1;
+
+    setMyVote(next);
+    setVoteTrue(nt);
+    setVoteFalse(nf);
+
+    try {
+      const { data, error } = await sb.rpc("upsert_truth_vote", {
+        post_id: p.id,
+        value: next,
+      });
+      if (error) throw error;
+      if (data) {
+        const t = Number((data as any).true ?? nt);
+        const f = Number((data as any).false ?? nf);
+        const m = Number(
+          (data as any).my_vote ?? next
+        ) as 1 | 0 | -1;
+        setVoteTrue(t);
+        setVoteFalse(f);
+        setMyVote(m);
+      }
+    } catch {
+      setMyVote(prev);
+      setVoteTrue(prevTrue);
+      setVoteFalse(prevFalse);
     } finally {
       setPendingVote(false);
     }
-  };
+  }
 
-  // 編集/削除（本人のみ）
-  const onEdit = async () => {
-    if (!isOwner) return;
-    const body = prompt("本文を編集", content);
-    if (body == null) return;
-    const { error } = await supabase.from("posts").update({ text: body }).eq("id", p.id);
-    if (error) alert(error.message); else location.reload();
-  };
+  // ラベル
+  async function toggleLabel(label: LabelKey) {
+    if (pendingLabelKey) return;
+    const user = await ensureLoginOrRedirect();
+    if (!user) return;
 
-  const onDelete = async () => {
-    if (!isOwner) return;
-    if (!confirm("本当に削除しますか？")) return;
-    const { error } = await supabase.from("posts").delete().eq("id", p.id);
-    if (error) alert(error.message); else location.reload();
-  };
+    setPendingLabelKey(label);
+    const had = myLabels.has(label);
+    const prevSet = new Set(myLabels);
+    const prevCounts = { ...labelCounts };
+
+    const nextSet = new Set(prevSet);
+    if (had) nextSet.delete(label);
+    else nextSet.add(label);
+    setMyLabels(nextSet);
+    setLabelCounts((c) => ({
+      ...c,
+      [label]: Math.max(0, (c[label] ?? 0) + (had ? -1 : 1)),
+    }));
+
+    try {
+      if (!had) {
+        const { error } = await sb
+          .from("post_labels")
+          .insert({ post_id: p.id, user_id: user.id, label });
+        if (error) throw error;
+      } else {
+        const { error } = await sb
+          .from("post_labels")
+          .delete()
+          .eq("post_id", p.id)
+          .eq("user_id", user.id)
+          .eq("label", label);
+        if (error) throw error;
+      }
+    } catch {
+      setMyLabels(prevSet);
+      setLabelCounts(prevCounts);
+    } finally {
+      setPendingLabelKey(null);
+    }
+  }
+
+  // 返信
+  async function submitReply() {
+    if (!replyText.trim() || replying) return;
+    const user = await ensureLoginOrRedirect();
+    if (!user) return;
+    setReplying(true);
+    const r = await sb.rpc("create_reply", {
+      parent: p.id,
+      body: replyText.trim(),
+    });
+    if (!r.error) {
+      setReplyText("");
+      setShowReply(false);
+      setShowThread(true); // 送ったらスレッドを開く
+      setReplyCount((c) => (c ?? 0) + 1); // カウント楽観更新
+    }
+    setReplying(false);
+  }
 
   return (
-    <article className="p-4 border rounded-xl bg-white">
-      {/* ヘッダー：著者 */}
-      <div className="flex items-center gap-2 text-xs opacity-80">
-        <img
-          src={p.avatar_url || "/default-avatar.svg"}
-          alt=""
-          className="w-6 h-6 rounded-full border"
-        />
-        <a className="font-medium hover:underline" href={`/user/${p.username || p.author}`}>
-          {p.display_name || p.username || "無名"}
-        </a>
-        <span className="opacity-60">@{p.username || (p.author ?? "").slice(0, 8)}</span>
-        <time className="ml-auto opacity-60">
-          {new Date(p.created_at).toLocaleString()}
+    <div className="rounded border p-4 bg-white space-y-3">
+      {/* ヘッダー */}
+      <div className="flex items-center gap-2 text-sm">
+        <Link
+          href={
+            author.handle
+              ? `/u/${encodeURIComponent(author.handle)}`
+              : "#"
+          }
+          className="flex items-center gap-2 min-w-0"
+        >
+          <img
+            src={author.avatar ?? "https://placehold.co/32x32"}
+            className="w-7 h-7 rounded-full border object-cover"
+            alt={author.name ?? author.handle ?? "user"}
+          />
+          <span className="font-medium truncate max-w-[12rem]">
+            {author.name ??
+              author.handle ??
+              (author.id ?? "").slice(0, 8)}
+          </span>
+          {author.handle && (
+            <span className="opacity-60">@{author.handle}</span>
+          )}
+        </Link>
+        <span className="opacity-60">·</span>
+        <time dateTime={p.created_at} className="opacity-60">
+          {createdAtLabel}
         </time>
-        {isOwner ? (
-          <div className="ml-2 flex gap-2">
-            <button onClick={onEdit} className="opacity-60 hover:opacity-100 underline">編集</button>
-            <button onClick={onDelete} className="opacity-60 hover:opacity-100 underline">削除</button>
-          </div>
-        ) : null}
+        <div className="ml-auto flex items-center gap-2">
+          {author.id && (
+            <FollowButton targetId={author.id as string} />
+          )}
+        </div>
       </div>
 
       {/* 本文 */}
-      <div className="whitespace-pre-wrap my-3">{content}</div>
+      <div className="whitespace-pre-wrap break-words text-[15px] leading-6">
+        {content}
+      </div>
 
-      {/* 画像 + 解析ラベル（任意） */}
-      {Array.isArray(p.media_urls) && p.media_urls.length > 0 && (
-        <img
-          src={p.media_urls[0]!}
-          className="mt-1 rounded border max-h-80 object-cover"
-          alt=""
-        />
-      )}
-      {p.analysis ? (
-        <div className="mt-2 flex flex-wrap gap-2 text-xs">
-          <span className={`px-2 py-0.5 rounded ${p.analysis?.flags?.heavyEditing ? "bg-red-100" : "bg-green-100"}`}>
-            画像加工: {p.analysis?.flags?.heavyEditing ? "強め" : "弱め/不明"}
-          </span>
-          <span className={`px-2 py-0.5 rounded ${p.analysis?.flags?.possibleAIGenerated ? "bg-orange-100" : "bg-gray-100"}`}>
-            AI生成の手がかり{p.analysis?.flags?.possibleAIGenerated ? "あり" : "なし"}
-          </span>
-          <span className="px-2 py-0.5 rounded bg-gray-100">
-            EXIF: {p.analysis?.flags?.noExif ? "なし" : "あり"}
-          </span>
+      {/* 嘘スコア & AI 判定 */}
+      <div className="flex flex-col items-stretch gap-1">
+        <div className="flex justify-end">
+          {/* AI の嘘％があればそれを優先してバッジに表示 */}
+          <ScoreBadge score={p.score} aiPercent={aiLiePercent} />
         </div>
-      ) : null}
+        <AiPostVerdictBadge
+          postId={p.id}
+          text={content}
+          onLiePercentChange={setAiLiePercent}
+        />
+      </div>
 
-      {/* アクション行 */}
-      <div className="mt-3 flex items-center gap-3 text-sm">
-        {typeof p.score === "number" && <ScoreBadge score={p.score} />}
-
+      {/* アクション */}
+      <div className="flex flex-wrap items-center gap-3 text-sm">
         {/* いいね */}
         <button
-          onClick={onLike}
+          onClick={toggleLike}
           disabled={pendingLike}
-          className={`px-2 py-1 border rounded ${liked ? "bg-blue-50 border-blue-300" : ""}`}
-          aria-label="いいね"
+          className={`px-2 py-1 rounded border ${
+            liked ? "bg-pink-50 border-pink-300" : "bg-gray-50"
+          } disabled:opacity-60`}
+          title="いいね"
         >
-          ❤ {likes}
+          ♥ {likes}
         </button>
 
-        {/* 真偽投票 */}
-        <div className="ml-2 flex items-center gap-2">
+        {/* 🚀 拡散（Boost） */}
+        <button
+          onClick={toggleBoost}
+          disabled={pendingBoost}
+          className={`px-2 py-1 rounded border ${
+            boosted
+              ? "bg-purple-50 border-purple-300"
+              : "bg-gray-50"
+          } disabled:opacity-60`}
+          title="拡散（フォロワーに広める）"
+        >
+          🚀 {boosts}
+        </button>
+
+        {/* 真偽 */}
+        <div className="flex items-center gap-2">
           <button
             onClick={() => castVote(1)}
             disabled={pendingVote}
-            className={`px-2 py-1 border rounded ${myVote === 1 ? "bg-emerald-50 border-emerald-300" : ""}`}
-            title="本当っぽい"
+            className={`px-2 py-1 rounded border ${
+              myVote === 1
+                ? "bg-green-50 border-green-300"
+                : "bg-gray-50"
+            } disabled:opacity-60`}
+            title="本当だと思う"
           >
-            👍 本当 {voteTrue}
+            ✅ {voteTrue}
           </button>
           <button
             onClick={() => castVote(-1)}
             disabled={pendingVote}
-            className={`px-2 py-1 border rounded ${myVote === -1 ? "bg-rose-50 border-rose-300" : ""}`}
-            title="嘘っぽい"
+            className={`px-2 py-1 rounded border ${
+              myVote === -1
+                ? "bg-red-50 border-red-300"
+                : "bg-gray-50"
+            } disabled:opacity-60`}
+            title="嘘だと思う"
           >
-            🤨 嘘 {voteFalse}
+            ❌ {voteFalse}
+          </button>
+        </div>
+
+        {/* ラベル */}
+        <div className="flex flex-wrap items-center gap-2">
+          {LABELS.map((l) => {
+            const key = l.key as LabelKey;
+            const mine = myLabels.has(key);
+            const cnt = labelCounts[key] ?? 0;
+            return (
+              <button
+                key={key}
+                onClick={() => toggleLabel(key)}
+                disabled={pendingLabelKey === key}
+                className={`px-2 py-1 rounded border text-xs ${
+                  mine
+                    ? "bg-blue-50 border-blue-300"
+                    : "bg-gray-50"
+                } disabled:opacity-60`}
+                title={l.text}
+              >
+                <span className="mr-1">{l.emoji}</span>
+                {l.text} {cnt > 0 ? `(${cnt})` : ""}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* 返信/スレッド */}
+        <div className="flex items-center gap-2 ml-auto">
+          <button
+            onClick={() => setShowThread((v) => !v)}
+            className="px-2 py-1 rounded border bg-gray-50"
+            title="この投稿の返信を表示/非表示"
+          >
+            💬 {replyCount}
+          </button>
+          <Link
+            href={`/p/${p.id}`}
+            className="px-2 py-1 rounded border bg-gray-50"
+            title="スレッドページへ"
+          >
+            ↗ スレッド
+          </Link>
+          <button
+            onClick={() => setShowReply((v) => !v)}
+            className="px-2 py-1 rounded border bg-gray-50"
+          >
+            返信する
           </button>
         </div>
       </div>
-    </article>
+
+      {/* 返信フォーム */}
+      {showReply && (
+        <div className="space-y-2">
+          <textarea
+            value={replyText}
+            onChange={(e) => setReplyText(e.target.value)}
+            className="w-full border rounded p-2 h-20"
+            placeholder="返信を入力…"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={submitReply}
+              disabled={replying || !replyText.trim()}
+              className="px-3 py-1 rounded bg-blue-600 text-white disabled:opacity-50"
+            >
+              返信を送信
+            </button>
+            <button
+              onClick={() => setShowReply(false)}
+              className="px-3 py-1 rounded border"
+            >
+              キャンセル
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* インライン返信一覧 */}
+      {showThread && <Replies postId={p.id} />}
+    </div>
   );
 }

@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Nav from "@/components/Nav";
+import ClientGate from "./ClientGate";
 
 export const metadata: Metadata = {
-  title: "SNS × 嘘発見スコア",
-  description: "投稿の嘘っぽさをスコア化する実験アプリ",
+  title: "PersonaLens",
+  description: "キャラ指紋でタイムラインを最適化するSNS",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

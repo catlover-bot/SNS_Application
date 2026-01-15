@@ -1,8 +1,9 @@
+﻿// apps/web/src/app/compose/page.tsx
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { computeLieScore } from "@sns/core";
-import { supabase } from "@/lib/supabase";
+import { supabaseClient as supabase } from "@/lib/supabase/client";
 
 type AnalysisFlags = {
   noExif?: boolean;
@@ -18,6 +19,9 @@ type Analysis = {
 const LIMIT = 280;
 
 export default function Compose() {
+  // ✅ Supabase クライアントを1度だけ生成
+  const sb = useMemo(() => supabase(), []);
+
   const [text, setText] = useState("");
   const [score, setScore] = useState(0);
   const [file, setFile] = useState<File | null>(null);
@@ -38,7 +42,7 @@ export default function Compose() {
     setPreview(f ? URL.createObjectURL(f) : null);
     if (!f) return;
 
-    // 画像解析 API
+    // 画像の簡易解析（任意API）
     try {
       const fd = new FormData();
       fd.append("file", f);
@@ -46,7 +50,7 @@ export default function Compose() {
       const json = await res.json();
       if (json?.ok) setAnalysis(json.result as Analysis);
     } catch {
-      // 解析失敗は致命的でないので黙って続行
+      // 解析失敗は無視（投稿は継続可能）
     }
   }
 
@@ -55,10 +59,10 @@ export default function Compose() {
     setPosting(true);
 
     try {
-      // 認証確認
-      const { data: { user } } = await supabase.auth.getUser();
+      // 認証チェック
+      const { data: { user } } = await sb.auth.getUser();
       if (!user) {
-        alert("ログインが必要です");
+        alert("投稿するにはログインが必要です。");
         setPosting(false);
         return;
       }
@@ -68,25 +72,25 @@ export default function Compose() {
       if (file) {
         const ext = file.name.split(".").pop() || "jpg";
         const path = `${user.id}/${crypto.randomUUID()}.${ext}`;
-        const up = await supabase.storage.from("media").upload(path, file, { upsert: false });
+        const up = await sb.storage.from("media").upload(path, file, { upsert: false });
         if (up.error) {
-          alert("画像のアップロードに失敗: " + up.error.message);
+          alert("画像のアップロードに失敗しました: " + up.error.message);
           setPosting(false);
           return;
         }
-        const pub = supabase.storage.from("media").getPublicUrl(path);
+        const pub = sb.storage.from("media").getPublicUrl(path);
         mediaUrl = pub.data.publicUrl;
       }
 
-      // ★ author を入れるのが超重要！
-      const { data, error } = await supabase
+      // 投稿作成
+      const { data, error } = await sb
         .from("posts")
         .insert({
-          author: user.id,              // ← これが無いと RLS で弾かれる構成が多い
+          author: user.id,
           text,
-          score,                        // double precision (0~1想定)
-          media_urls: mediaUrl ? [mediaUrl] : [],   // 画像なしなら空配列でもOK
-          analysis,                     // JSONB
+          score,                          // 0..1 を想定
+          media_urls: mediaUrl ? [mediaUrl] : [],
+          analysis,                       // JSONB
         })
         .select("id")
         .single();
@@ -94,9 +98,11 @@ export default function Compose() {
       if (error) {
         alert(error.message);
       } else {
-        // 投稿成功
-        setText(""); setFile(null); setPreview(null); setAnalysis(null);
-        // 詳細に飛ぶ場合は /p/${data.id} へ
+        // 初期化してトップへ（必要なら `/p/${data.id}` へ）
+        setText("");
+        setFile(null);
+        setPreview(null);
+        setAnalysis(null);
         location.href = "/";
       }
     } finally {
@@ -108,7 +114,7 @@ export default function Compose() {
     <div className="space-y-4">
       <textarea
         className="w-full h-52 p-3 rounded border"
-        placeholder="いま何してる？"
+        placeholder="いま何してる？（最大280文字）"
         value={text}
         onChange={(e) => onChangeText(e.target.value)}
       />
@@ -117,7 +123,7 @@ export default function Compose() {
         <div>嘘っぽさ {(score * 100).toFixed(1)}%</div>
       </div>
 
-      {/* 画像選択 */}
+      {/* 画像アップロード */}
       <div className="space-y-2">
         <input type="file" accept="image/*" onChange={onPick} />
         {preview && (
@@ -126,24 +132,37 @@ export default function Compose() {
             {analysis ? (
               <div className="text-sm space-y-1">
                 <div>
-                  画像診断:
-                  <span className={`ml-2 px-2 py-0.5 rounded ${analysis.flags?.heavyEditing ? "bg-red-100" : "bg-green-100"}`}>
-                    加工{analysis.flags?.heavyEditing ? "強め" : "弱め/不明"}
+                  編集推定:
+                  <span
+                    className={`ml-2 px-2 py-0.5 rounded ${
+                      analysis.flags?.heavyEditing ? "bg-red-100" : "bg-green-100"
+                    }`}
+                  >
+                    {analysis.flags?.heavyEditing ? "強い" : "弱い/なし"}
                   </span>
-                  <span className={`ml-2 px-2 py-0.5 rounded ${analysis.flags?.possibleAIGenerated ? "bg-orange-100" : "bg-gray-100"}`}>
-                    AI生成{analysis.flags?.possibleAIGenerated ? "の可能性" : "手がかりなし"}
+                  <span
+                    className={`ml-2 px-2 py-0.5 rounded ${
+                      analysis.flags?.possibleAIGenerated ? "bg-orange-100" : "bg-gray-100"
+                    }`}
+                  >
+                    AI生成の可能性 {analysis.flags?.possibleAIGenerated ? "高い" : "低い"}
                   </span>
                 </div>
                 <div className="opacity-70">
-                  ELA: {analysis.elaScore != null ? (analysis.elaScore * 100).toFixed(1) : "-"}% ／ EXIF: {analysis.flags?.noExif ? "なし" : "あり"}
+                  ELA: {analysis.elaScore != null ? (analysis.elaScore * 100).toFixed(1) : "-"}% ・ EXIF:{" "}
+                  {analysis.flags?.noExif ? "なし" : "あり"}
                 </div>
                 {analysis.reasons?.length ? (
                   <ul className="list-disc pl-5 opacity-70">
-                    {analysis.reasons.slice(0, 3).map((r, i) => <li key={i}>{r}</li>)}
+                    {analysis.reasons.slice(0, 3).map((r, i) => (
+                      <li key={i}>{r}</li>
+                    ))}
                   </ul>
                 ) : null}
               </div>
-            ) : file ? <div className="opacity-70 text-sm">解析中...</div> : null}
+            ) : file ? (
+              <div className="opacity-70 text-sm">解析中…</div>
+            ) : null}
           </div>
         )}
       </div>
@@ -153,7 +172,7 @@ export default function Compose() {
         disabled={posting || (!text && !file)}
         className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
       >
-        投稿してスコア化
+        投稿する
       </button>
     </div>
   );

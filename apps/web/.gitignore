@@ -39,3 +39,21 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# build/cache
+.turbo/
+**/.turbo/
+**/.next/
+**/dist/
+**/build/
+**/coverage/
+**/.cache/
+
+# mobile (必要なら)
+**/.expo/
+**/android/app/build/
+**/ios/build/
+
+# OS
+.DS_Store
+Thumbs.db
