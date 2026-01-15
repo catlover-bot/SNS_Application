@@ -2,111 +2,148 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 
-type Mode = "friendship" | "romance";
+interface CompatRowRaw {
+  source_key: string;
+  target_key: string;
+  kind: string;
+  score: number;
+  relation_label: string | null;
+  mode: string; // DB上には general 等が入っている想定
+}
+
+interface PersonaDefRow {
+  key: string;
+  title: string;
+  icon: string | null;
+  theme: string | null;
+  relation_style: string | null;
+  vibe_tags: string[] | null;
+}
+
+type QueryMode = "friendship" | "romance";
 
 export async function GET(req: NextRequest) {
-  const supa = await supabaseServer();
-  const { searchParams } = new URL(req.url);
+  try {
+    const { searchParams } = new URL(req.url);
 
-  const key = searchParams.get("key");
-  const mode = (searchParams.get("mode") as Mode) ?? "friendship";
+    const sourceKey = searchParams.get("key");
+    const modeParam = (searchParams.get("mode") ?? "friendship") as QueryMode;
+    const limitParam = searchParams.get("limit");
 
-  if (!key) {
+    if (!sourceKey) {
+      return NextResponse.json(
+        { error: "missing `key` query param" },
+        { status: 400 }
+      );
+    }
+
+    if (!["friendship", "romance"].includes(modeParam)) {
+      return NextResponse.json(
+        { error: "invalid `mode` (use friendship|romance)" },
+        { status: 400 }
+      );
+    }
+
+    const limit =
+      limitParam && !Number.isNaN(Number(limitParam))
+        ? Math.min(Math.max(Number(limitParam), 1), 50)
+        : 16;
+
+    // supabaseServer が関数か、そのままクライアントか分からないので両対応
+    const raw = supabaseServer as any;
+    const supabase = typeof raw === "function" ? await raw() : raw;
+
+    if (!supabase || typeof supabase.from !== "function") {
+      throw new Error(
+        "supabaseServer から Supabase クライアントを取得できませんでした。" +
+          "他の API (/api/feed など) での使い方と同じ形に揃えてください。"
+      );
+    }
+
+    // ★ ここがポイント：DB の kind(friendship/romance) を使って絞る
+    const { data: compatRowsRaw, error: compatError } = await supabase
+      .from("persona_compat")
+      .select("source_key, target_key, kind, score, relation_label, mode")
+      .eq("source_key", sourceKey)
+      .eq("kind", modeParam)
+      .neq("target_key", sourceKey)
+      .order("score", { ascending: false })
+      .limit(limit);
+
+    if (compatError) {
+      console.error("[persona_compat] error:", compatError);
+      return NextResponse.json(
+        {
+          error: "failed to load compat",
+          details: compatError.message,
+        },
+        { status: 500 }
+      );
+    }
+
+    const compatRows = (compatRowsRaw ?? []) as CompatRowRaw[];
+
+    if (compatRows.length === 0) {
+      return NextResponse.json({
+        mode: modeParam,
+        sourceKey,
+        items: [],
+      });
+    }
+
+    const targetKeys = [...new Set(compatRows.map((r) => r.target_key))];
+
+    // 対象キャラの定義を取得
+    const { data: personaDefsRaw, error: defsError } = await supabase
+      .from("persona_defs")
+      .select("key, title, icon, theme, relation_style, vibe_tags")
+      .in("key", targetKeys);
+
+    if (defsError) {
+      console.error("[persona_defs] error:", defsError);
+      return NextResponse.json(
+        {
+          error: "failed to load persona defs",
+          details: defsError.message,
+        },
+        { status: 500 }
+      );
+    }
+
+    const personaDefs = (personaDefsRaw ?? []) as PersonaDefRow[];
+
+    const defMap = new Map<string, PersonaDefRow>();
+    personaDefs.forEach((row) => defMap.set(row.key, row));
+
+    const items = compatRows.map((row) => {
+      const def = defMap.get(row.target_key);
+      return {
+        targetKey: row.target_key,
+        kind: row.kind, // friendship / romance
+        score: row.score,
+        relationLabel: row.relation_label,
+        title: def?.title ?? row.target_key,
+        icon: def?.icon ?? null,
+        theme: def?.theme ?? null,
+        relationStyle: def?.relation_style ?? null,
+        vibeTags: def?.vibe_tags ?? [],
+        // DB の mode は今のところ 'general' 固定なので返さない
+      };
+    });
+
+    return NextResponse.json({
+      mode: modeParam,
+      sourceKey,
+      items,
+    });
+  } catch (err: any) {
+    console.error("[persona_compat API] fatal error", err);
     return NextResponse.json(
-      { error: "key is required" },
-      { status: 400 }
-    );
-  }
-
-  // --- 1. 相性スコア本体（VIEW: persona_compat_tags） ---
-  const { data: compatRows, error: compatError } = await supa
-    .from("persona_compat_tags")
-    .select(
-      `
-      source_key,
-      target_key,
-      kind,
-      score,
-      relation_label
-    `
-    )
-    .eq("source_key", key)
-    .eq("kind", mode)
-    .order("score", { ascending: false })
-    .limit(50);
-
-  if (compatError) {
-    console.error("[api/personas/compat] compat error", compatError);
-    return NextResponse.json(
-      { error: compatError.message },
+      {
+        error: "internal_error",
+        details: err?.message ?? String(err),
+      },
       { status: 500 }
     );
   }
-
-  if (!compatRows || compatRows.length === 0) {
-    return NextResponse.json([]);
-  }
-
-  // --- 2. 相性相手の persona_defs をまとめて取得 ---
-  const targetKeys = Array.from(
-    new Set(
-      compatRows
-        .map((r) => r.target_key)
-        .filter((k): k is string => !!k && k.trim().length > 0)
-    )
-  );
-
-  let personaMap: Record<
-    string,
-    {
-      key: string;
-      title: string | null;
-      theme: string | null;
-      vibe_tags: string[] | null;
-      icon: string | null;
-    }
-  > = {};
-
-  if (targetKeys.length > 0) {
-    const { data: personas, error: personaError } = await supa
-      .from("persona_defs")
-      .select("key,title,theme,vibe_tags,icon")
-      .in("key", targetKeys);
-
-    if (personaError) {
-      console.error(
-        "[api/personas/compat] persona_defs error",
-        personaError
-      );
-      // persona 情報なしでも最低限スコアは返す
-    } else if (personas) {
-      for (const p of personas) {
-        personaMap[p.key] = {
-          key: p.key,
-          title: p.title,
-          theme: p.theme,
-          vibe_tags: p.vibe_tags,
-          icon: p.icon,
-        };
-      }
-    }
-  }
-
-  // --- 3. persona 情報をマージして返す ---
-  const enriched = compatRows.map((row) => {
-    const p = row.target_key ? personaMap[row.target_key] : undefined;
-
-    return {
-      source_key: row.source_key,
-      target_key: row.target_key,
-      score: row.score,
-      relation_label: row.relation_label ?? null,
-      target_title: p?.title ?? null,
-      target_theme: p?.theme ?? null,
-      target_vibe_tags: p?.vibe_tags ?? null,
-      target_icon: p?.icon ?? null,
-    };
-  });
-
-  return NextResponse.json(enriched);
 }

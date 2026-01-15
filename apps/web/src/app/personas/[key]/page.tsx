@@ -18,16 +18,33 @@ type PersonaDetail = {
 
 type Mode = "friendship" | "romance";
 
+// APIから整形後に使う型
 type CompatRow = {
   source_key: string;
   target_key: string;
   score: number | null;
-  // API によっては無い可能性もあるので全部 optional 扱い
+  // API 側からくる情報をここに格納
   target_title?: string | null;
   target_theme?: string | null;
   target_vibe_tags?: string[] | null;
   target_icon?: string | null;
   relation_label?: string | null;
+};
+
+type CompatApiResponse = {
+  mode: string;
+  sourceKey: string;
+  items: {
+    targetKey: string;
+    kind: string;
+    score: number;
+    relationLabel: string | null;
+    title: string;
+    icon: string | null;
+    theme: string | null;
+    relationStyle: string | null;
+    vibeTags?: string[] | null;
+  }[];
 };
 
 const MODE_LABEL: Record<Mode, string> = {
@@ -62,10 +79,7 @@ function themeLabel(theme: string | null | undefined): string {
  * スコア＆モードから自動で「相性タイトル」をつける
  * DB に relation_label があればそちらを優先し、なければこれを使う想定
  */
-function autoRelationLabel(
-  mode: Mode,
-  score: number | null | undefined
-): string {
+function autoRelationLabel(mode: Mode, score: number | null | undefined): string {
   const p = percent(score);
 
   if (mode === "romance") {
@@ -103,6 +117,7 @@ function resolveIcon(
       return { isImage: true, value: raw };
     }
 
+    // 絵文字っぽい場合
     if (raw.length <= 3) {
       return { isImage: false, value: raw };
     }
@@ -115,6 +130,7 @@ function resolveIcon(
     return { isImage: true, value: `/persona-images/${base}` };
   }
 
+  // icon が無い場合は key ベースでローカル画像にフォールバック
   return {
     isImage: true,
     value: `/persona-images/${safeKey}.png`,
@@ -124,9 +140,7 @@ function resolveIcon(
 export default function PersonaDetailPage() {
   const params = useParams<{ key: string }>();
   const personaKey =
-    typeof params.key === "string"
-      ? decodeURIComponent(params.key)
-      : "unknown";
+    typeof params.key === "string" ? decodeURIComponent(params.key) : "unknown";
 
   const [persona, setPersona] = useState<PersonaDetail | null>(null);
   const [loadingPersona, setLoadingPersona] = useState(true);
@@ -143,11 +157,6 @@ export default function PersonaDetailPage() {
   const [compatError, setCompatError] = useState<string | null>(null);
   const [loadingCompat, setLoadingCompat] = useState(false);
 
-  // 相性相手の persona 詳細キャッシュ
-  const [compatPersonaMap, setCompatPersonaMap] = useState<
-    Record<string, PersonaDetail | undefined>
-  >({});
-
   // --- キャラ詳細の取得（自分自身：persona_defs から） ---
   useEffect(() => {
     let alive = true;
@@ -161,11 +170,7 @@ export default function PersonaDetailPage() {
         );
         if (!res.ok) {
           const t = await res.text();
-          console.error(
-            "[persona detail page] persona api error",
-            res.status,
-            t
-          );
+          console.error("[persona detail page] persona api error", res.status, t);
           throw new Error(t || res.statusText);
         }
         const data = (await res.json()) as PersonaDetail;
@@ -191,6 +196,7 @@ export default function PersonaDetailPage() {
     let alive = true;
     setCompatError(null);
 
+    // すでにそのモードのデータを持っている場合は再フェッチしない
     if (compat[mode] !== null) {
       return;
     }
@@ -199,26 +205,36 @@ export default function PersonaDetailPage() {
 
     (async () => {
       try {
-        const res = await fetch(
-          `/api/personas/compat?key=${encodeURIComponent(
-            personaKey
-          )}&mode=${mode}`
-        );
+        const params = new URLSearchParams({
+          key: personaKey,
+          mode,
+          limit: "16",
+        });
+
+        const res = await fetch(`/api/personas/compat?${params.toString()}`);
         if (!res.ok) {
           const t = await res.text();
-          console.error(
-            "[persona detail page] compat api error",
-            res.status,
-            t
-          );
+          console.error("[persona detail page] compat api error", res.status, t);
           throw new Error(t || res.statusText);
         }
-        const rows = (await res.json()) as CompatRow[];
+
+        const data = (await res.json()) as CompatApiResponse;
         if (!alive) return;
+
+        const rows: CompatRow[] = (data.items ?? []).map((item) => ({
+          source_key: data.sourceKey,
+          target_key: item.targetKey,
+          score: item.score,
+          target_title: item.title,
+          target_theme: item.theme,
+          target_vibe_tags: item.vibeTags ?? [],
+          target_icon: item.icon,
+          relation_label: item.relationLabel ?? undefined,
+        }));
 
         setCompat((prev) => ({
           ...prev,
-          [mode]: rows ?? [],
+          [mode]: rows,
         }));
       } catch (e: any) {
         console.error("[persona detail page] compat error", e);
@@ -245,54 +261,7 @@ export default function PersonaDetailPage() {
     [compat, mode]
   );
 
-  // --- 相性相手の persona 詳細をまとめて取得（persona_defs から） ---
-  useEffect(() => {
-    const rows = currentCompat;
-    if (!rows || rows.length === 0) return;
-
-    const keys = Array.from(
-      new Set(
-        rows
-          .map((r) => r.target_key)
-          .filter((k): k is string => !!k && k.trim().length > 0)
-      )
-    );
-    if (!keys.length) return;
-
-    let cancelled = false;
-
-    (async () => {
-      for (const key of keys) {
-        if (cancelled) return;
-
-        // 既にキャッシュ済みならスキップ
-        if (compatPersonaMap[key]) continue;
-
-        try {
-          const res = await fetch(
-            `/api/persona_defs?key=${encodeURIComponent(key)}`
-          );
-          if (!res.ok) continue;
-          const data = (await res.json()) as PersonaDetail;
-          if (cancelled) return;
-          setCompatPersonaMap((prev) => {
-            if (prev[key]) return prev;
-            return { ...prev, [key]: data };
-          });
-        } catch {
-          // 無視して次へ
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentCompat]);
-
   const [topCompat, restCompat] = useMemo(() => {
-    // target_key が入っている行だけ使う
     const rowsWithKey = currentCompat.filter(
       (r) => !!r.target_key && r.target_key.trim().length > 0
     );
@@ -305,47 +274,45 @@ export default function PersonaDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="text-sm mb-1">
+      <div className="mb-1 text-sm">
         <Link
           href="/personas"
-          className="text-slate-500 hover:text-slate-700 inline-flex items-center gap-1"
+          className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-700"
         >
           ← キャラ図鑑へ戻る
         </Link>
       </div>
 
       {personaError && (
-        <div className="text-xs text-red-600 mb-1">
+        <div className="mb-1 text-xs text-red-600">
           キャラ情報の取得に失敗しました。（キー: {personaKey}）
         </div>
       )}
 
       {/* キャラヘッダー */}
-      <section className="rounded-2xl border bg-white/80 px-4 py-4 sm:px-6 sm:py-5 flex gap-4 items-center">
-        <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center overflow-hidden shrink-0 border">
+      <section className="flex items-center gap-4 rounded-2xl border bg-white/80 px-4 py-4 sm:px-6 sm:py-5">
+        <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border bg-slate-100">
           {iconInfo.isImage ? (
             <Image
               src={iconInfo.value}
               alt={persona?.title || personaKey || "キャラアイコン"}
               width={64}
               height={64}
-              className="w-full h-full object-cover"
+              className="h-full w-full object-cover"
             />
           ) : (
             <span className="text-2xl">{iconInfo.value}</span>
           )}
         </div>
-        <div className="flex-1 min-w-0 space-y-1.5">
-          <div className="text-xs text-slate-400 break-all">
-            key: {personaKey}
-          </div>
-          <div className="text-lg sm:text-xl font-semibold truncate">
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <div className="break-all text-xs text-slate-400">key: {personaKey}</div>
+          <div className="truncate text-lg font-semibold sm:text-xl">
             {loadingPersona
               ? "読み込み中…"
               : persona?.title || personaKey || "（名称未設定）"}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] bg-slate-50 text-slate-700">
+            <span className="inline-flex items-center rounded-full border bg-slate-50 px-2 py-0.5 text-[11px] text-slate-700">
               {themeLabel(persona?.theme)}
             </span>
             {(persona?.vibe_tags ?? [])
@@ -364,10 +331,10 @@ export default function PersonaDetailPage() {
 
       {/* キャラ詳細情報 */}
       <section className="rounded-2xl border bg-slate-50 px-4 py-3 sm:px-6 sm:py-4">
-        <div className="text-xs font-semibold text-slate-600 mb-1">
+        <div className="mb-1 text-xs font-semibold text-slate-600">
           キャラ詳細情報
         </div>
-        <p className="text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">
+        <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-800">
           {personaError
             ? "キャラ詳細情報を読み込めませんでした。"
             : persona?.blurb ?? "このキャラの詳細情報は準備中です。"}
@@ -377,23 +344,23 @@ export default function PersonaDetailPage() {
       {/* 話し方のクセ */}
       {persona?.talk_style && (
         <section className="rounded-2xl border bg-slate-50 px-4 py-3 sm:px-6 sm:py-4">
-          <div className="text-xs font-semibold text-slate-600 mb-1">
+          <div className="mb-1 text-xs font-semibold text-slate-600">
             話し方のクセ
           </div>
-          <p className="text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-800">
             {persona.talk_style}
           </p>
         </section>
       )}
 
       {/* ソウルメイト候補 */}
-      <section className="rounded-2xl border bg-white/80 px-4 py-4 sm:px-6 sm:py-5 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+      <section className="space-y-4 rounded-2xl border bg-white/80 px-4 py-4 sm:px-6 sm:py-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="flex-1">
-            <div className="text-xs font-semibold text-sky-600 tracking-wide">
+            <div className="text-xs font-semibold tracking-wide text-sky-600">
               ソウルメイト候補
             </div>
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="mt-1 text-xs text-slate-500">
               あなたのキャラと特に相性が良い{" "}
               <span className="font-semibold">友情モード / 恋愛モード</span>
               の相手キャラをスコア付きで表示します。
@@ -403,9 +370,9 @@ export default function PersonaDetailPage() {
             <button
               type="button"
               onClick={() => setMode("friendship")}
-              className={`px-3 py-1 rounded-full ${
+              className={`rounded-full px-3 py-1 ${
                 mode === "friendship"
-                  ? "bg-white shadow-sm text-slate-900"
+                  ? "bg-white text-slate-900 shadow-sm"
                   : "text-slate-500"
               }`}
             >
@@ -414,9 +381,9 @@ export default function PersonaDetailPage() {
             <button
               type="button"
               onClick={() => setMode("romance")}
-              className={`px-3 py-1 rounded-full ${
+              className={`rounded-full px-3 py-1 ${
                 mode === "romance"
-                  ? "bg-white shadow-sm text-rose-700"
+                  ? "bg-white text-rose-700 shadow-sm"
                   : "text-slate-500"
               }`}
             >
@@ -430,11 +397,11 @@ export default function PersonaDetailPage() {
         )}
 
         {loadingCompat && !currentCompat.length ? (
-          <div className="text-xs text-slate-500 py-6 text-center">
+          <div className="py-6 text-center text-xs text-slate-500">
             相性データを読み込み中…
           </div>
         ) : !currentCompat.length ? (
-          <div className="text-xs text-slate-500 py-6 text-center border rounded-xl bg-slate-50">
+          <div className="rounded-xl border bg-slate-50 py-6 text-center text-xs text-slate-500">
             まだこのキャラの相性データがありません。
           </div>
         ) : (
@@ -442,65 +409,49 @@ export default function PersonaDetailPage() {
             {/* No.1 ソウルメイト候補 */}
             {topCompat && (() => {
               const tp = topCompat;
-              const targetPersona =
-                compatPersonaMap[tp.target_key] ?? null;
 
-              const displayTitle =
-                targetPersona?.title ||
-                tp.target_title ||
-                "（名称未設定）";
-
-              const displayKey =
-                targetPersona?.key || tp.target_key || "unknown";
-
-              const displayVibes =
-                targetPersona?.vibe_tags ??
-                tp.target_vibe_tags ??
-                [];
-
+              const displayTitle = tp.target_title || "（名称未設定）";
+              const displayKey = tp.target_key || "unknown";
+              const displayVibes = tp.target_vibe_tags ?? [];
               const icon = resolveIcon(
-                targetPersona?.icon ?? tp.target_icon ?? null,
-                targetPersona?.key ?? tp.target_key ?? "unknown"
+                tp.target_icon ?? null,
+                tp.target_key ?? "unknown"
               );
 
-              // ★ 相性タイトル（DB の relation_label があれば優先）
               const relationLabel =
                 tp.relation_label ?? autoRelationLabel(mode, tp.score);
 
               return (
-                <div className="rounded-2xl border bg-gradient-to-br from-rose-50 via-amber-50 to-sky-50 px-4 py-4 sm:px-6 sm:py-5 flex flex-col sm:flex-row gap-3 sm:gap-4">
-                  {/* 相性相手のアイコン */}
-                  <div className="w-12 h-12 rounded-xl bg-white/80 flex items-center justify-center overflow-hidden shrink-0 border border-rose-100">
+                <div className="flex flex-col gap-3 rounded-2xl border bg-gradient-to-br from-rose-50 via-amber-50 to-sky-50 px-4 py-4 sm:flex-row sm:gap-4 sm:px-6 sm:py-5">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-rose-100 bg-white/80">
                     {icon.isImage ? (
                       <Image
                         src={icon.value}
                         alt={`${displayTitle} のアイコン`}
                         width={48}
                         height={48}
-                        className="w-full h-full object-cover"
+                        className="h-full w-full object-cover"
                       />
                     ) : (
                       <span className="text-xl">{icon.value}</span>
                     )}
                   </div>
 
-                  <div className="flex-1 min-w-0 space-y-1.5">
-                    <div className="text-[10px] font-semibold text-rose-500 uppercase tracking-wide">
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-rose-500">
                       ソウルメイト候補 No.1
                     </div>
-                    <div className="text-base sm:text-lg font-semibold truncate">
+                    <div className="text-base font-semibold sm:text-lg">
                       {displayTitle}
                     </div>
-                    <div className="text-[11px] text-slate-500">
-                      @{displayKey}
-                    </div>
+                    <div className="text-[11px] text-slate-500">@{displayKey}</div>
                     <div className="mt-2 flex flex-wrap gap-1.5">
-                      <span className="inline-flex items-center rounded-full bg-white/70 px-2 py-0.5 text-[11px] text-rose-700 border border-rose-100">
+                      <span className="inline-flex items-center rounded-full border border-rose-100 bg-white/70 px-2 py-0.5 text-[11px] text-rose-700">
                         {MODE_LABEL[mode]} {percent(tp.score)}%{" "}
                         {mode === "romance" ? "💘" : "🤝"}
                       </span>
                       {relationLabel && (
-                        <span className="inline-flex items-center rounded-full bg-white/80 px-2 py-0.5 text-[11px] text-slate-700 border border-slate-100">
+                        <span className="inline-flex items-center rounded-full border border-slate-100 bg-white/80 px-2 py-0.5 text-[11px] text-slate-700">
                           {relationLabel}
                         </span>
                       )}
@@ -508,21 +459,22 @@ export default function PersonaDetailPage() {
                       {displayVibes.slice(0, 3).map((tag) => (
                         <span
                           key={tag}
-                          className="inline-flex items-center rounded-full bg-white/60 px-2 py-0.5 text-[11px] text-slate-700 border border-slate-100"
+                          className="inline-flex items-center rounded-full border border-slate-100 bg-white/60 px-2 py-0.5 text-[11px] text-slate-700"
                         >
                           {tag}
                         </span>
                       ))}
                     </div>
                   </div>
-                  <div className="flex items-center sm:items-start justify-end">
-                    <div className="text-right space-y-1">
+
+                  <div className="flex items-center justify-end sm:items-start">
+                    <div className="space-y-1 text-right">
                       <div className="text-xs text-slate-500">
                         {MODE_LABEL[mode]}
                       </div>
                       <div className="text-3xl font-semibold">
                         {percent(tp.score)}
-                        <span className="text-base ml-1">%</span>
+                        <span className="ml-1 text-base">%</span>
                       </div>
                     </div>
                   </div>
@@ -532,67 +484,43 @@ export default function PersonaDetailPage() {
 
             {/* その他候補 */}
             {restCompat.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 {restCompat.map((row) => {
-                  const targetPersona =
-                    compatPersonaMap[row.target_key] ?? null;
-
-                  const displayTitle =
-                    targetPersona?.title ||
-                    row.target_title ||
-                    "（名称未設定）";
-
-                  const displayKey =
-                    targetPersona?.key ||
-                    row.target_key ||
-                    "unknown";
-
-                  const displayVibes =
-                    targetPersona?.vibe_tags ??
-                    row.target_vibe_tags ??
-                    [];
-
+                  const displayTitle = row.target_title || "（名称未設定）";
+                  const displayKey = row.target_key || "unknown";
+                  const displayVibes = row.target_vibe_tags ?? [];
                   const icon = resolveIcon(
-                    targetPersona?.icon ??
-                      row.target_icon ??
-                      null,
-                    targetPersona?.key ??
-                      row.target_key ??
-                      "unknown"
+                    row.target_icon ?? null,
+                    row.target_key ?? "unknown"
                   );
-
-                  // ★ ここも同じく、 relation_label → 自動タイトル fallback
                   const relationLabel =
                     row.relation_label ?? autoRelationLabel(mode, row.score);
 
                   return (
                     <div
                       key={`${row.target_key}-${mode}`}
-                      className="rounded-xl border bg-white/80 px-4 py-3 flex flex-col gap-2"
+                      className="flex flex-col gap-2 rounded-xl border bg-white/80 px-4 py-3"
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-start gap-2 min-w-0">
-                          {/* 相性相手のアイコン（小さめ） */}
-                          <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center overflow-hidden shrink-0 border border-slate-100">
+                        <div className="flex min-w-0 items-start gap-2">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-100 bg-slate-50">
                             {icon.isImage ? (
                               <Image
                                 src={icon.value}
                                 alt={`${displayTitle} のアイコン`}
                                 width={32}
                                 height={32}
-                                className="w-full h-full object-cover"
+                                className="h-full w-full object-cover"
                               />
                             ) : (
-                              <span className="text-lg">
-                                {icon.value}
-                              </span>
+                              <span className="text-lg">{icon.value}</span>
                             )}
                           </div>
                           <div className="min-w-0">
-                            <div className="text-sm font-semibold truncate">
+                            <div className="truncate text-sm font-semibold">
                               {displayTitle}
                             </div>
-                            <div className="text-[11px] text-slate-500 truncate">
+                            <div className="truncate text-[11px] text-slate-500">
                               @{displayKey}
                             </div>
                           </div>
@@ -603,13 +531,13 @@ export default function PersonaDetailPage() {
                           </div>
                           <div className="text-xl font-semibold">
                             {percent(row.score)}
-                            <span className="text-xs ml-1">%</span>
+                            <span className="ml-1 text-xs">%</span>
                           </div>
                         </div>
                       </div>
-                      <div className="flex flex-wrap gap-1.5 mt-1">
+                      <div className="mt-1 flex flex-wrap gap-1.5">
                         {relationLabel && (
-                          <span className="inline-flex items-center rounded-full bg-slate-50 px-2 py-0.5 text-[11px] text-slate-700 border border-slate-100">
+                          <span className="inline-flex items-center rounded-full border border-slate-100 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-700">
                             {relationLabel}
                           </span>
                         )}
@@ -617,7 +545,7 @@ export default function PersonaDetailPage() {
                         {displayVibes.slice(0, 2).map((tag) => (
                           <span
                             key={tag}
-                            className="inline-flex items-center rounded-full bg-slate-50 px-2 py-0.5 text-[11px] text-slate-700 border border-slate-100"
+                            className="inline-flex items-center rounded-full border border-slate-100 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-700"
                           >
                             {tag}
                           </span>
