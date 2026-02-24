@@ -81,7 +81,13 @@ export default function Nav() {
           <Link href="/messages">DM</Link>
           <Link href="/following">フォロー中</Link>
           <Link href="/compose">投稿</Link>
+          <Link href="/saved">保存</Link>
           <Link href="/dashboard/persona">キャラ分析</Link>
+          <Link href="/dashboard/ab-timeseries">A/B時系列</Link>
+          <Link href="/dashboard/push-delivery">Push配信</Link>
+          <Link href="/persona-feed">キャラ別TL</Link>
+          <Link href="/persona-evolution">キャラ進化</Link>
+          <Link href="/persona-lab">キャラ相性ラボ</Link>
 
           {/* 通知（未読バッジ） */}
           <Link href="/notifications" className="relative inline-flex items-center">
@@ -99,7 +105,9 @@ export default function Nav() {
 
           <Link href="/dashboard">ダッシュボード</Link>
           <Link href="/settings/profile">プロフィール</Link>
+          <Link href="/settings/security">セキュリティ</Link>
           <Link href="/personas" className="font-medium underline">キャラ図鑑</Link>
+          <Link href="/support">サポート</Link>
         </nav>
         <div className="ml-auto">
           {loggedIn ? (

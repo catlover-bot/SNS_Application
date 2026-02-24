@@ -11,7 +11,9 @@
     "dev": "turbo run dev --parallel",
     "dev:web": "pnpm -C apps/web dev",
     "dev:mobile": "pnpm -C apps/mobile start",
-    "clean": "pnpm -C apps/web run clean || exit 0 && pnpm -C packages/core run clean || exit 0"
+    "clean": "pnpm -C apps/web run clean || exit 0 && pnpm -C packages/core run clean || exit 0",
+    "persona:fill-images": "node scripts/fill_persona_images.mjs",
+    "preflight:appstore": "node scripts/app_store_preflight.mjs"
   },
   "devDependencies": {
     "turbo": "^2.1.0",

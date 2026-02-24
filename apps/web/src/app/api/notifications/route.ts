@@ -10,6 +10,7 @@ export async function GET() {
   const { data, error } = await supa
     .from("notifications")
     .select("*")
+    .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -29,6 +30,7 @@ export async function POST(req: Request) {
   const { error } = await supa
     .from("notifications")
     .update({ read_at: new Date().toISOString() })
+    .eq("user_id", user.id)
     .in("id", ids);
 
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });

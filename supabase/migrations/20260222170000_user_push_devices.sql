@@ -1,0 +1,51 @@
+create table if not exists public.user_push_devices (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  provider text not null default 'expo',
+  expo_push_token text not null,
+  platform text,
+  device_name text,
+  app_version text,
+  permission_status text,
+  enabled boolean not null default true,
+  failure_count integer not null default 0,
+  last_seen_at timestamptz,
+  last_delivery_at timestamptz,
+  last_delivery_status text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (user_id, expo_push_token),
+  constraint user_push_devices_provider_check check (provider in ('expo'))
+);
+
+create unique index if not exists user_push_devices_expo_push_token_uidx
+  on public.user_push_devices (expo_push_token);
+
+create index if not exists user_push_devices_user_enabled_idx
+  on public.user_push_devices (user_id, enabled, updated_at desc);
+
+alter table public.user_push_devices enable row level security;
+
+drop policy if exists "push_devices_select_own" on public.user_push_devices;
+create policy "push_devices_select_own"
+  on public.user_push_devices
+  for select
+  using (auth.uid() = user_id);
+
+drop policy if exists "push_devices_insert_own" on public.user_push_devices;
+create policy "push_devices_insert_own"
+  on public.user_push_devices
+  for insert
+  with check (auth.uid() = user_id);
+
+drop policy if exists "push_devices_update_own" on public.user_push_devices;
+create policy "push_devices_update_own"
+  on public.user_push_devices
+  for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "push_devices_delete_own" on public.user_push_devices;
+create policy "push_devices_delete_own"
+  on public.user_push_devices
+  for delete
+  using (auth.uid() = user_id);

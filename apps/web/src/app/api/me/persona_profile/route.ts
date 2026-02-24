@@ -1,6 +1,7 @@
 // apps/web/src/app/api/me/persona_profile/route.ts
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
+import { derivePersonaRowsFromSignals } from "@/lib/personaAssignment";
 
 export async function GET() {
   const supa = await supabaseServer();
@@ -31,12 +32,51 @@ export async function GET() {
     return NextResponse.json({ error: pErr.message }, { status: 500 });
   }
 
-  if (!personas || personas.length === 0) {
-    return NextResponse.json({ personas: [], defs: [] });
+  let finalPersonas = personas ?? [];
+  let source = "user_personas";
+
+  if (!finalPersonas.length) {
+    const postsRes = await supa
+      .from("posts")
+      .select("id,created_at,analysis")
+      .eq("author", user.id)
+      .order("created_at", { ascending: false })
+      .limit(500);
+
+    const posts = (postsRes.data ?? []) as Array<{
+      id: string;
+      created_at: string;
+      analysis: any;
+    }>;
+
+    if (posts.length > 0) {
+      const ids = posts.map((p) => p.id);
+      const scoreRes = await supa
+        .from("post_scores")
+        .select("post_id,persona_key,final_score")
+        .in("post_id", ids)
+        .limit(30000);
+      const derived = derivePersonaRowsFromSignals({
+        posts,
+        scoreRows: (scoreRes.data ??
+          []) as Array<{ post_id: string; persona_key: string; final_score: number | null }>,
+        limit: 12,
+      });
+      finalPersonas = derived.map((r) => ({
+        persona_key: r.persona_key,
+        score: r.score,
+        confidence: r.confidence,
+      }));
+      source = "derived_from_posts";
+    }
+  }
+
+  if (!finalPersonas.length) {
+    return NextResponse.json({ personas: [], defs: [], source: "empty" });
   }
 
   // 対応するキャラ定義（タイトルなど）
-  const keys = personas.map((r) => r.persona_key).filter(Boolean);
+  const keys = finalPersonas.map((r: any) => r.persona_key).filter(Boolean);
   let defs: { key: string; title: string; theme: string | null }[] = [];
 
   if (keys.length > 0) {
@@ -52,5 +92,5 @@ export async function GET() {
     }
   }
 
-  return NextResponse.json({ personas, defs });
+  return NextResponse.json({ personas: finalPersonas, defs, source });
 }

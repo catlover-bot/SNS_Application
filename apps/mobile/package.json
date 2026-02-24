@@ -4,14 +4,22 @@
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web"
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "preflight:store": "node ../../scripts/app_store_preflight.mjs",
+    "build:ios:prod": "eas build --platform ios --profile production",
+    "submit:ios:prod": "eas submit --platform ios --profile production"
   },
   "dependencies": {
+    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@shopify/flash-list": "^1.7.3",
     "@sns/core": "workspace:*",
     "@supabase/supabase-js": "^2.76.1",
     "expo": "~54.0.18",
+    "expo-constants": "~17.1.7",
+    "expo-device": "~7.1.4",
+    "expo-notifications": "~0.31.4",
     "expo-status-bar": "~3.0.8",
     "react": "19.1.0",
     "react-dom": "19.1.0",

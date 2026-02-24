@@ -3,6 +3,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import {
+  analyzeLieScore,
+  calibrateLieScoreWithFeedback,
+  resolveSocialIdentity,
+  resolveSocialIdentityLabels,
+} from "@sns/core";
 import { supabaseClient as supabase } from "@/lib/supabase/client";
 import FollowButton from "@/components/FollowButton";
 import Replies from "@/components/Replies";
@@ -22,7 +28,13 @@ type Post = {
 
   reply_count?: number | null;
   score?: number | null; // 0..1 (ローカルの嘘スコア)
+  analysis?: any;
 };
+
+function isMissingRelationError(err: any, relation: string) {
+  const text = `${err?.message ?? ""} ${err?.details ?? ""} ${err?.hint ?? ""}`.toLowerCase();
+  return text.includes(relation.toLowerCase()) && text.includes("does not exist");
+}
 
 function ScoreBadge({
   score,
@@ -58,11 +70,29 @@ function ScoreBadge({
   );
 }
 
-export default function PostCard({ p }: { p: Post }) {
+export default function PostCard({
+  p,
+  onLikeChanged,
+  onBoostChanged,
+  onReplySubmitted,
+}: {
+  p: Post;
+  onLikeChanged?: (nextLiked: boolean) => void;
+  onBoostChanged?: (nextBoosted: boolean) => void;
+  onReplySubmitted?: () => void;
+}) {
   // ✅ Supabase クライアントを1回だけ生成
   const sb = useMemo(() => supabase(), []);
 
   const content = (p.text ?? p.body ?? "").toString();
+  const lieAnalysis = useMemo(() => analyzeLieScore({ text: content }), [content]);
+  const [openCount, setOpenCount] = useState(0);
+  const [reportCount, setReportCount] = useState(0);
+  const postPersonaKey = String(
+    p.analysis?.persona?.selected ??
+      p.analysis?.persona?.candidates?.[0]?.key ??
+      ""
+  ).trim();
 
   // 作者
   const [author, setAuthor] = useState<{
@@ -76,6 +106,21 @@ export default function PostCard({ p }: { p: Post }) {
     name: p.author_display ?? null,
     avatar: p.author_avatar ?? null,
   });
+  const authorIdentity = useMemo(
+    () =>
+      resolveSocialIdentity({
+        id: author.id ?? null,
+        handle: author.handle ?? null,
+        displayName: author.name ?? null,
+      }),
+    [author.handle, author.id, author.name]
+  );
+  const authorLabels = useMemo(
+    () => resolveSocialIdentityLabels(authorIdentity),
+    [authorIdentity]
+  );
+  const authorPrimaryLabel = authorLabels.primary;
+  const authorSecondaryLabel = authorLabels.secondary;
 
   useEffect(() => {
     if (!author.id || author.handle) return;
@@ -106,6 +151,14 @@ export default function PostCard({ p }: { p: Post }) {
   const [boosts, setBoosts] = useState<number>(0);
   const [boosted, setBoosted] = useState(false);
   const [pendingBoost, setPendingBoost] = useState(false);
+
+  // 🔖 保存 / コレクション
+  const [saves, setSaves] = useState<number>(0);
+  const [saved, setSaved] = useState(false);
+  const [pendingSave, setPendingSave] = useState(false);
+  const [saveCollectionKey, setSaveCollectionKey] = useState<string>("saved");
+  const [saveCollectionLabel, setSaveCollectionLabel] = useState<string>("保存");
+  const [saveCollectionAvailable, setSaveCollectionAvailable] = useState(false);
 
   // 真偽
   const [voteTrue, setVoteTrue] = useState(0);
@@ -140,6 +193,17 @@ export default function PostCard({ p }: { p: Post }) {
 
   // 🔥 LLM 由来の「嘘％」（AI 判定バッジから通知される）
   const [aiLiePercent, setAiLiePercent] = useState<number | null>(null);
+  const calibratedLie = useMemo(
+    () =>
+      calibrateLieScoreWithFeedback(lieAnalysis, {
+        opens: openCount,
+        replies: replyCount,
+        reports: reportCount,
+        truthTrueVotes: voteTrue,
+        truthFalseVotes: voteFalse,
+      }),
+    [lieAnalysis, openCount, replyCount, reportCount, voteFalse, voteTrue]
+  );
 
   // Hydration エラー対策：ロケール固定でフォーマット
   const createdAtLabel = useMemo(() => {
@@ -231,7 +295,7 @@ export default function PostCard({ p }: { p: Post }) {
       }
 
       // 真偽件数
-      const [t1, t2] = await Promise.all([
+      const [t1, t2, opensRes, reportsRes] = await Promise.all([
         sb
           .from("truth_votes")
           .select("id", { count: "exact", head: true })
@@ -242,10 +306,24 @@ export default function PostCard({ p }: { p: Post }) {
           .select("id", { count: "exact", head: true })
           .eq("post_id", p.id)
           .eq("value", -1),
+        sb
+          .from("user_post_open_state")
+          .select("id", { count: "exact", head: true })
+          .eq("post_id", p.id),
+        sb
+          .from("user_reports")
+          .select("id", { count: "exact", head: true })
+          .eq("post_id", p.id),
       ]);
       if (alive) {
         if (typeof t1.count === "number") setVoteTrue(t1.count);
         if (typeof t2.count === "number") setVoteFalse(t2.count);
+        if (typeof opensRes.count === "number") setOpenCount(Math.max(0, opensRes.count));
+        if (!reportsRes.error && typeof reportsRes.count === "number") {
+          setReportCount(Math.max(0, reportsRes.count));
+        } else if (reportsRes.error && isMissingRelationError(reportsRes.error, "user_reports")) {
+          setReportCount(0);
+        }
       }
 
       // ラベル件数
@@ -268,6 +346,30 @@ export default function PostCard({ p }: { p: Post }) {
       alive = false;
     };
   }, [p.id, labelKeys, sb]);
+
+  useEffect(() => {
+    let stop = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/posts/${encodeURIComponent(p.id)}/save`, {
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const json = await res.json().catch(() => null);
+        if (stop || !json) return;
+        if (typeof json.saveCount === "number") setSaves(Math.max(0, json.saveCount));
+        setSaved(Boolean(json.saved));
+        setSaveCollectionAvailable(Boolean(json.collectionAvailable));
+        if (json.collection?.key) setSaveCollectionKey(String(json.collection.key));
+        if (json.collection?.label) setSaveCollectionLabel(String(json.collection.label));
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      stop = true;
+    };
+  }, [p.id]);
 
   async function ensureLoginOrRedirect() {
     const {
@@ -301,6 +403,7 @@ export default function PostCard({ p }: { p: Post }) {
           .from("reactions")
           .insert({ post_id: p.id, user_id: user.id, kind: "like" });
         if (error) throw error;
+        onLikeChanged?.(true);
       } else {
         const { error } = await sb
           .from("reactions")
@@ -309,6 +412,7 @@ export default function PostCard({ p }: { p: Post }) {
           .eq("user_id", user.id)
           .eq("kind", "like");
         if (error) throw error;
+        onLikeChanged?.(false);
       }
     } catch {
       setLiked(prevLiked);
@@ -337,6 +441,7 @@ export default function PostCard({ p }: { p: Post }) {
           .from("reactions")
           .insert({ post_id: p.id, user_id: user.id, kind: "boost" });
         if (error) throw error;
+        onBoostChanged?.(true);
       } else {
         const { error } = await sb
           .from("reactions")
@@ -345,6 +450,7 @@ export default function PostCard({ p }: { p: Post }) {
           .eq("user_id", user.id)
           .eq("kind", "boost");
         if (error) throw error;
+        onBoostChanged?.(false);
       }
     } catch {
       setBoosted(prevBoosted);
@@ -352,6 +458,72 @@ export default function PostCard({ p }: { p: Post }) {
     } finally {
       setPendingBoost(false);
     }
+  }
+
+  async function savePost(nextSaved?: boolean, nextCollection?: { key: string; label: string }) {
+    if (pendingSave) return;
+    const user = await ensureLoginOrRedirect();
+    if (!user) return;
+    setPendingSave(true);
+
+    const prevSaved = saved;
+    const prevSaves = saves;
+    const prevCollectionKey = saveCollectionKey;
+    const prevCollectionLabel = saveCollectionLabel;
+
+    const targetSaved = typeof nextSaved === "boolean" ? nextSaved : !saved;
+    const targetCollectionKey = nextCollection?.key ?? saveCollectionKey ?? "saved";
+    const targetCollectionLabel = nextCollection?.label ?? saveCollectionLabel ?? "保存";
+
+    setSaved(targetSaved);
+    setSaves((c) => Math.max(0, c + (targetSaved === prevSaved ? 0 : targetSaved ? 1 : -1)));
+    setSaveCollectionKey(targetCollectionKey);
+    setSaveCollectionLabel(targetCollectionLabel);
+
+    try {
+      const res = await fetch(`/api/posts/${encodeURIComponent(p.id)}/save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          saved: targetSaved,
+          collectionKey: targetCollectionKey,
+          collectionLabel: targetCollectionLabel,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.error ?? "save_failed");
+      }
+      setSaved(Boolean(json?.saved));
+      if (typeof json?.saveCount === "number") setSaves(Math.max(0, json.saveCount));
+      setSaveCollectionAvailable(Boolean(json?.collectionAvailable));
+      if (json?.collection?.key) setSaveCollectionKey(String(json.collection.key));
+      if (json?.collection?.label) setSaveCollectionLabel(String(json.collection.label));
+    } catch {
+      setSaved(prevSaved);
+      setSaves(prevSaves);
+      setSaveCollectionKey(prevCollectionKey);
+      setSaveCollectionLabel(prevCollectionLabel);
+    } finally {
+      setPendingSave(false);
+    }
+  }
+
+  async function chooseCustomCollection() {
+    const user = await ensureLoginOrRedirect();
+    if (!user) return;
+    const label = window.prompt("保存先コレクション名（例: ネタ帳 / 後で読む / 研究）", saveCollectionLabel || "保存");
+    if (!label) return;
+    const normalized = label.trim();
+    if (!normalized) return;
+    const key = normalized
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}_ -]+/gu, "")
+      .replace(/\s+/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 24) || "saved";
+    await savePost(true, { key, label: normalized.slice(0, 24) });
   }
 
   // 真偽
@@ -460,6 +632,7 @@ export default function PostCard({ p }: { p: Post }) {
       setShowReply(false);
       setShowThread(true); // 送ったらスレッドを開く
       setReplyCount((c) => (c ?? 0) + 1); // カウント楽観更新
+      onReplySubmitted?.();
     }
     setReplying(false);
   }
@@ -479,15 +652,13 @@ export default function PostCard({ p }: { p: Post }) {
           <img
             src={author.avatar ?? "https://placehold.co/32x32"}
             className="w-7 h-7 rounded-full border object-cover"
-            alt={author.name ?? author.handle ?? "user"}
+            alt={authorPrimaryLabel}
           />
           <span className="font-medium truncate max-w-[12rem]">
-            {author.name ??
-              author.handle ??
-              (author.id ?? "").slice(0, 8)}
+            {authorPrimaryLabel}
           </span>
-          {author.handle && (
-            <span className="opacity-60">@{author.handle}</span>
+          {authorSecondaryLabel && (
+            <span className="opacity-60">{authorSecondaryLabel}</span>
           )}
         </Link>
         <span className="opacity-60">·</span>
@@ -502,6 +673,13 @@ export default function PostCard({ p }: { p: Post }) {
       </div>
 
       {/* 本文 */}
+      {postPersonaKey && (
+        <div className="text-xs inline-flex">
+          <span className="px-2 py-0.5 rounded-full border bg-blue-50 border-blue-300">
+            投稿キャラ @{postPersonaKey}
+          </span>
+        </div>
+      )}
       <div className="whitespace-pre-wrap break-words text-[15px] leading-6">
         {content}
       </div>
@@ -510,8 +688,34 @@ export default function PostCard({ p }: { p: Post }) {
       <div className="flex flex-col items-stretch gap-1">
         <div className="flex justify-end">
           {/* AI の嘘％があればそれを優先してバッジに表示 */}
-          <ScoreBadge score={p.score} aiPercent={aiLiePercent} />
+          <ScoreBadge score={aiLiePercent == null ? calibratedLie.score : p.score} aiPercent={aiLiePercent} />
         </div>
+        {(calibratedLie.cautionChips.length > 0 || calibratedLie.reliefChips.length > 0) && (
+          <div className="flex flex-wrap gap-1 justify-end">
+            {calibratedLie.cautionChips.slice(0, 2).map((chip) => (
+              <span key={`lie-caution-${p.id}-${chip}`} className="text-[11px] px-2 py-0.5 rounded-full border bg-rose-50 border-rose-200">
+                {chip}
+              </span>
+            ))}
+            {calibratedLie.reliefChips.slice(0, 2).map((chip) => (
+              <span key={`lie-relief-${p.id}-${chip}`} className="text-[11px] px-2 py-0.5 rounded-full border bg-emerald-50 border-emerald-200">
+                {chip}
+              </span>
+            ))}
+          </div>
+        )}
+        {Math.abs(calibratedLie.adjustment) >= 0.01 && (
+          <div className="text-[11px] text-slate-400 text-right">
+            反応補正 {calibratedLie.adjustment > 0 ? "+" : ""}
+            {Math.round(calibratedLie.adjustment * 100)}pt
+            {calibratedLie.feedbackSignals.opens > 0
+              ? ` / 開封 ${calibratedLie.feedbackSignals.opens}`
+              : ""}
+          </div>
+        )}
+        {calibratedLie.reasons[0] && (
+          <div className="text-[11px] text-slate-500 text-right">{calibratedLie.reasons[0]}</div>
+        )}
         <AiPostVerdictBadge
           postId={p.id}
           text={content}
@@ -546,6 +750,54 @@ export default function PostCard({ p }: { p: Post }) {
         >
           🚀 {boosts}
         </button>
+
+        <button
+          onClick={() => savePost()}
+          disabled={pendingSave}
+          className={`px-2 py-1 rounded border ${
+            saved ? "bg-amber-50 border-amber-300" : "bg-gray-50"
+          } disabled:opacity-60`}
+          title="保存 / コレクションに追加"
+        >
+          🔖 {saves}
+        </button>
+        {saved && (
+          <div className="flex items-center gap-1">
+            <select
+              value={saveCollectionKey}
+              onChange={(e) => {
+                const key = e.target.value;
+                const map: Record<string, string> = {
+                  saved: "保存",
+                  read_later: "後で読む",
+                  idea: "ネタ帳",
+                  research: "研究",
+                  favorite: "お気に入り",
+                };
+                if (key === "__custom__") {
+                  void chooseCustomCollection();
+                  return;
+                }
+                void savePost(true, { key, label: map[key] ?? saveCollectionLabel ?? "保存" });
+              }}
+              className="px-2 py-1 rounded border bg-white text-xs"
+              title={saveCollectionAvailable ? "保存先コレクション" : "コレクション（DB未設定時は反映されません）"}
+            >
+              <option value="saved">保存</option>
+              <option value="read_later">後で読む</option>
+              <option value="idea">ネタ帳</option>
+              <option value="research">研究</option>
+              <option value="favorite">お気に入り</option>
+              {!["saved", "read_later", "idea", "research", "favorite"].includes(saveCollectionKey) && (
+                <option value={saveCollectionKey}>{saveCollectionLabel}</option>
+              )}
+              <option value="__custom__">+ 新規</option>
+            </select>
+            {!saveCollectionAvailable && (
+              <span className="text-[10px] opacity-60">DB未適用</span>
+            )}
+          </div>
+        )}
 
         {/* 真偽 */}
         <div className="flex items-center gap-2">

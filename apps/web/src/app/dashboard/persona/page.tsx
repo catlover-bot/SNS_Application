@@ -7,6 +7,7 @@ import PersonaRadar from "@/components/PersonaRadar";
 import PromptBar from "@/components/PromptBar";
 import PersonaBadge from "@/components/PersonaBadge";
 import AiTimelineSummaryPanel from "@/components/AiTimelineSummaryPanel";
+import PersonaEvolutionChart from "@/components/PersonaEvolutionChart";
 
 type Soulmate = {
   user_id: string;
@@ -20,10 +21,46 @@ type Soulmate = {
   avatar_url: string | null;
 };
 
+type PersonaInsight = {
+  dominant_key: string | null;
+  dominant_title: string | null;
+  streak_days: number;
+  count_total: number;
+  count_7d: number;
+  count_prev_7d: number;
+  momentum_delta: number;
+  trend: "up" | "down" | "stable";
+  top_personas: Array<{
+    key: string;
+    title: string;
+    count: number;
+    share: number;
+  }>;
+};
+
+type PersonaQuest = {
+  id: string;
+  kind: "focus" | "contrast" | "duet";
+  title: string;
+  description: string;
+  xp: number;
+  completed: boolean;
+  seed: string;
+  target_persona_key: string | null;
+  target_persona_title: string | null;
+};
+
 export default function PersonaDashboardPage() {
   const [soulmates, setSoulmates] = useState<Soulmate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [insight, setInsight] = useState<PersonaInsight | null>(null);
+  const [insightLoading, setInsightLoading] = useState(true);
+  const [insightError, setInsightError] = useState<string | null>(null);
+  const [quests, setQuests] = useState<PersonaQuest[]>([]);
+  const [questXp, setQuestXp] = useState(0);
+  const [questLoading, setQuestLoading] = useState(true);
+  const [questError, setQuestError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -50,6 +87,59 @@ export default function PersonaDashboardPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setQuestLoading(true);
+      setQuestError(null);
+      try {
+        const res = await fetch("/api/me/persona-quests", { cache: "no-store" });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json) {
+          throw new Error(json?.error ?? "キャラクエスト取得に失敗しました");
+        }
+        if (!alive) return;
+        setQuests((json.quests ?? []) as PersonaQuest[]);
+        setQuestXp(Number(json.total_xp ?? 0) || 0);
+      } catch (e: any) {
+        if (!alive) return;
+        setQuestError(e?.message ?? "キャラクエスト取得に失敗しました");
+        setQuests([]);
+      } finally {
+        if (alive) setQuestLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setInsightLoading(true);
+      setInsightError(null);
+      try {
+        const res = await fetch("/api/me/persona-insights", { cache: "no-store" });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json) {
+          throw new Error(json?.error ?? "キャラインサイト取得に失敗しました");
+        }
+        if (!alive) return;
+        setInsight(json as PersonaInsight);
+      } catch (e: any) {
+        if (!alive) return;
+        setInsightError(e?.message ?? "キャラインサイト取得に失敗しました");
+        setInsight(null);
+      } finally {
+        if (alive) setInsightLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   return (
     <div className="space-y-6">
       {/* ヘッダ */}
@@ -58,6 +148,14 @@ export default function PersonaDashboardPage() {
         <p className="text-sm text-gray-600">
           あなたのキャラのバランスと、相性の良い「ソウルメイト候補」をまとめて確認できます。
         </p>
+        <div className="mt-2 flex flex-wrap gap-3 text-sm">
+          <Link href="/persona-feed" className="underline">
+            キャラ別タイムラインへ
+          </Link>
+          <Link href="/persona-lab" className="underline">
+            キャラ相性ラボへ
+          </Link>
+        </div>
       </div>
 
       {/* 上段：レーダー + プロンプトバー + タイムラインAIサマリー */}
@@ -78,6 +176,130 @@ export default function PersonaDashboardPage() {
           {/* Premium想定：タイムライン一括AI分析 */}
           <AiTimelineSummaryPanel />
         </div>
+      </div>
+
+      <PersonaEvolutionChart />
+
+      <div className="border rounded-xl p-4 bg-white shadow-sm space-y-3">
+        <div>
+          <h2 className="text-sm font-semibold">キャラインサイト</h2>
+          <p className="text-xs text-gray-500">
+            投稿履歴から、現在の主キャラの勢いと継続性を算出しています。
+          </p>
+        </div>
+        {insightLoading ? (
+          <p className="text-sm text-gray-500">キャラインサイトを分析中です…</p>
+        ) : insightError ? (
+          <p className="text-sm text-red-500">{insightError}</p>
+        ) : !insight?.dominant_key ? (
+          <p className="text-sm text-gray-500">十分な投稿データがありません。</p>
+        ) : (
+          <>
+            <div className="grid sm:grid-cols-3 gap-3">
+              <div className="rounded-lg border p-3 bg-gray-50">
+                <div className="text-xs text-gray-500">主キャラ連続日数</div>
+                <div className="text-2xl font-bold">{insight.streak_days}</div>
+                <div className="text-xs text-gray-500">days</div>
+              </div>
+              <div className="rounded-lg border p-3 bg-gray-50">
+                <div className="text-xs text-gray-500">直近7日投稿数</div>
+                <div className="text-2xl font-bold">{insight.count_7d}</div>
+                <div className="text-xs text-gray-500">
+                  前週 {insight.count_prev_7d}
+                </div>
+              </div>
+              <div className="rounded-lg border p-3 bg-gray-50">
+                <div className="text-xs text-gray-500">モメンタム</div>
+                <div
+                  className={`text-2xl font-bold ${
+                    insight.trend === "up"
+                      ? "text-green-600"
+                      : insight.trend === "down"
+                      ? "text-red-600"
+                      : "text-gray-800"
+                  }`}
+                >
+                  {insight.momentum_delta > 0 ? "+" : ""}
+                  {insight.momentum_delta}
+                </div>
+                <div className="text-xs text-gray-500">
+                  {insight.trend === "up"
+                    ? "上昇"
+                    : insight.trend === "down"
+                    ? "下降"
+                    : "横ばい"}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <div className="text-xs text-gray-500 mb-1">投稿内訳 TOP</div>
+              <div className="flex flex-wrap gap-2">
+                {insight.top_personas.slice(0, 6).map((x) => (
+                  <span
+                    key={x.key}
+                    className="text-xs px-2 py-1 rounded-full border bg-white"
+                  >
+                    {x.title} {(x.share * 100).toFixed(0)}%
+                  </span>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="border rounded-xl p-4 bg-white shadow-sm space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold">キャラクエスト</h2>
+            <p className="text-xs text-gray-500">
+              キャラ行動をゲーム化して、継続投稿と会話を促進します。
+            </p>
+          </div>
+          <div className="text-sm font-semibold">本日XP {questXp}</div>
+        </div>
+        {questLoading ? (
+          <p className="text-sm text-gray-500">クエストを生成中です…</p>
+        ) : questError ? (
+          <p className="text-sm text-red-500">{questError}</p>
+        ) : quests.length === 0 ? (
+          <p className="text-sm text-gray-500">クエストはまだ生成されていません。</p>
+        ) : (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {quests.map((q) => (
+              <article
+                key={q.id}
+                className={`rounded-lg border p-3 space-y-2 ${
+                  q.completed ? "bg-green-50 border-green-300" : "bg-white"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-sm font-semibold">{q.title}</div>
+                  <div className="text-xs px-2 py-0.5 rounded-full border">
+                    {q.xp} XP
+                  </div>
+                </div>
+                <p className="text-xs text-gray-600">{q.description}</p>
+                <div className="flex items-center justify-between">
+                  <a
+                    href={`/compose?seed=${encodeURIComponent(q.seed)}`}
+                    className="text-xs underline"
+                  >
+                    このクエストで投稿
+                  </a>
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded-full border ${
+                      q.completed ? "bg-green-100 border-green-300" : "bg-gray-50"
+                    }`}
+                  >
+                    {q.completed ? "達成済み" : "未達成"}
+                  </span>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 下段：恋愛モード・ソウルメイト候補 */}

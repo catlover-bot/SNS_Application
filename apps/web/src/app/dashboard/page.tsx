@@ -1,7 +1,8 @@
 // apps/web/src/app/dashboard/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import PostCard from "@/components/PostCard";
 // 関数を supabase という名前で受ける（※関数なので呼び出しは supabase()）
 import { supabaseClient as supabase } from "@/lib/supabase/client";
 
@@ -15,6 +16,12 @@ type Persona = {
   updated_at: string;
 };
 
+type PostRow = {
+  id: string;
+  created_at: string;
+  [k: string]: any;
+};
+
 // モジュール読み込み時に 1 回だけ生成して共有（レンダー毎に増えない）
 const sb = supabase();
 
@@ -22,11 +29,13 @@ export default function DashboardPage() {
   const [p, setP]   = useState<Persona | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr]   = useState<string | null>(null);
+  const [posts, setPosts] = useState<PostRow[]>([]);
+  const [loadingPosts, setLoadingPosts] = useState(true);
 
-  async function fetchPersona() {
+  const fetchPersona = useCallback(async (): Promise<string | null> => {
     setErr(null);
     const { data: { user } } = await sb.auth.getUser();
-    if (!user) { location.href = "/login?next=/dashboard"; return; }
+    if (!user) { location.href = "/login?next=/dashboard"; return null; }
     const { data, error } = await sb
       .from("v_user_persona")
       .select("user_id,persona_key,title,icon,score,confidence,updated_at")
@@ -34,10 +43,49 @@ export default function DashboardPage() {
       .maybeSingle();
     if (error) setErr(error.message);
     setP((data as Persona) ?? null);
-  }
+    return user.id;
+  }, []);
+
+  const fetchMyPosts = useCallback(async (userId: string) => {
+    setLoadingPosts(true);
+
+    // 優先: 表示情報を持つ view
+    const enriched = await sb
+      .from("v_posts_enriched")
+      .select("*")
+      .eq("author", userId)
+      .order("created_at", { ascending: false })
+      .limit(30);
+
+    if (!enriched.error && enriched.data) {
+      setPosts(enriched.data as PostRow[]);
+      setLoadingPosts(false);
+      return;
+    }
+
+    // フォールバック: posts テーブル
+    const raw = await sb
+      .from("posts")
+      .select("*")
+      .eq("author", userId)
+      .order("created_at", { ascending: false })
+      .limit(30);
+
+    if (!raw.error && raw.data) {
+      setPosts(raw.data as PostRow[]);
+    } else {
+      setPosts([]);
+    }
+    setLoadingPosts(false);
+  }, []);
 
   // 初期ロード
-  useEffect(() => { void fetchPersona(); }, []);
+  useEffect(() => {
+    (async () => {
+      const userId = await fetchPersona();
+      if (userId) await fetchMyPosts(userId);
+    })();
+  }, [fetchPersona, fetchMyPosts]);
 
   // Realtime: 自分の user_personas 行の更新を購読して即時反映
   useEffect(() => {
@@ -55,13 +103,42 @@ export default function DashboardPage() {
         .subscribe();
     })();
     return () => { if (ch) sb.removeChannel(ch); };
-  }, []);
+  }, [fetchPersona]);
 
   async function recompute() {
     setBusy(true);
     try {
-      await fetch("/api/persona/recompute", { method: "POST" });
-      await fetchPersona();
+      const res = await fetch("/api/personas/recompute", { method: "POST" });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(json?.error ?? "再評価に失敗しました");
+      }
+      if (!json?.ok) {
+        throw new Error(json?.error ?? "再評価に失敗しました");
+      }
+      const userId = await fetchPersona();
+      if (userId) await fetchMyPosts(userId);
+      if (Array.isArray(json?.personas) && json.personas.length > 0 && json.persisted === false) {
+        const top = json.personas[0] as {
+          persona_key: string;
+          score: number;
+          confidence: number;
+        };
+        setP({
+          user_id: userId ?? "me",
+          persona_key: top.persona_key,
+          title: top.persona_key,
+          icon: null,
+          score: Math.max(0, Math.min(1, Number(top.score ?? 0))),
+          confidence: Math.max(0, Math.min(1, Number(top.confidence ?? 0))),
+          updated_at: new Date().toISOString(),
+        });
+        setErr("DB権限またはRPC未設定のため、投稿履歴ベースの暫定キャラを表示しています。");
+      } else {
+        setErr(null);
+      }
+    } catch (e: any) {
+      setErr(e?.message ?? "再評価に失敗しました");
     } finally {
       setBusy(false);
     }
@@ -103,7 +180,22 @@ export default function DashboardPage() {
         )}
       </section>
 
-      {/* TODO: 自分の投稿一覧をここに配置（既存の PostCard リストを流用） */}
+      <section className="rounded border bg-white p-4">
+        <h2 className="font-medium mb-3">自分の投稿</h2>
+        {loadingPosts ? (
+          <div className="text-sm opacity-70">投稿を読み込み中…</div>
+        ) : posts.length === 0 ? (
+          <div className="text-sm opacity-70">
+            まだ投稿がありません。<a href="/compose" className="underline">投稿する</a>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {posts.map((post) => (
+              <PostCard key={post.id} p={post} />
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

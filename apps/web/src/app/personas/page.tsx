@@ -76,12 +76,9 @@ export default async function PersonasCatalogPage() {
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {list.map((r) => {
-                    const src = `/persona-images/${encodeURIComponent(r.key)}.png`;
-                    const fallback = `/persona-images/${encodeURIComponent(r.key)}_legend.png`;
-                    const fallback2 = `/persona-images/${encodeURIComponent(r.key)}_lite.png`;
-                    const missing = "/persona-images/_missing.png";
-                    // Server Component では onError を使えないため、外部URLは使わずローカル優先
-                    // 画像の欠落は _missing.png に集約
+                    const src = `/api/personas/image/${encodeURIComponent(r.key)}?title=${encodeURIComponent(
+                      r.title
+                    )}`;
                     return (
                       <Link
                         key={r.key}

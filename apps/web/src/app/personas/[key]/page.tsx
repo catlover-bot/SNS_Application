@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import Image from "next/image";
+import { buildPersonaProfile } from "@sns/core";
 
 type PersonaDetail = {
   key: string;
@@ -103,17 +104,23 @@ function autoRelationLabel(mode: Mode, score: number | null | undefined): string
  */
 function resolveIcon(
   icon: string | null | undefined,
-  key: string | null | undefined
+  key: string | null | undefined,
+  title?: string | null
 ): { isImage: boolean; value: string } {
   const raw = icon?.trim();
   const safeKey = (key && key.trim()) || "default";
+  const safeTitle = (title ?? "").trim();
 
   if (raw) {
-    if (
-      raw.startsWith("http://") ||
-      raw.startsWith("https://") ||
-      raw.startsWith("/")
-    ) {
+    if (raw.startsWith("http://") || raw.startsWith("https://")) {
+      return { isImage: true, value: raw };
+    }
+    if (raw.startsWith("/persona-images/")) {
+      const name = raw.replace("/persona-images/", "").replace(/\.(png|jpe?g|svg)$/i, "");
+      const qs = safeTitle ? `?title=${encodeURIComponent(safeTitle)}` : "";
+      return { isImage: true, value: `/api/personas/image/${encodeURIComponent(name)}${qs}` };
+    }
+    if (raw.startsWith("/")) {
       return { isImage: true, value: raw };
     }
 
@@ -122,18 +129,19 @@ function resolveIcon(
       return { isImage: false, value: raw };
     }
 
-    const base =
-      raw.endsWith(".png") || raw.endsWith(".jpg") || raw.endsWith(".jpeg")
-        ? raw
-        : `${raw}.png`;
-
-    return { isImage: true, value: `/persona-images/${base}` };
+    const iconKey = raw.replace(/\.(png|jpe?g|svg)$/i, "");
+    const qs = safeTitle ? `?title=${encodeURIComponent(safeTitle)}` : "";
+    return {
+      isImage: true,
+      value: `/api/personas/image/${encodeURIComponent(iconKey)}${qs}`,
+    };
   }
 
   // icon が無い場合は key ベースでローカル画像にフォールバック
+  const qs = safeTitle ? `?title=${encodeURIComponent(safeTitle)}` : "";
   return {
     isImage: true,
-    value: `/persona-images/${safeKey}.png`,
+    value: `/api/personas/image/${encodeURIComponent(safeKey)}${qs}`,
   };
 }
 
@@ -270,7 +278,28 @@ export default function PersonaDetailPage() {
     return [first, rest] as const;
   }, [currentCompat]);
 
-  const iconInfo = resolveIcon(persona?.icon, personaKey);
+  const iconInfo = resolveIcon(persona?.icon, personaKey, persona?.title ?? personaKey);
+  const profile = useMemo(
+    () =>
+      buildPersonaProfile({
+        key: personaKey,
+        title: persona?.title ?? personaKey,
+        theme: persona?.theme ?? null,
+        blurb: persona?.blurb ?? null,
+        talkStyle: persona?.talk_style ?? null,
+        relationStyle: persona?.relation_style ?? null,
+        vibeTags: persona?.vibe_tags ?? [],
+      }),
+    [
+      persona?.blurb,
+      persona?.relation_style,
+      persona?.talk_style,
+      persona?.theme,
+      persona?.title,
+      persona?.vibe_tags,
+      personaKey,
+    ]
+  );
 
   return (
     <div className="space-y-6">
@@ -339,6 +368,32 @@ export default function PersonaDetailPage() {
             ? "キャラ詳細情報を読み込めませんでした。"
             : persona?.blurb ?? "このキャラの詳細情報は準備中です。"}
         </p>
+      </section>
+
+      <section className="rounded-2xl border bg-slate-50 px-4 py-3 sm:px-6 sm:py-4 space-y-2">
+        <div className="text-xs font-semibold text-slate-600">性格プロファイル</div>
+        <p className="text-sm text-slate-800">{profile.summary}</p>
+        <div className="flex flex-wrap gap-1.5">
+          <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-700">
+            口調: {profile.toneGuide}
+          </span>
+          <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-700">
+            関係性: {profile.relationGuide}
+          </span>
+          <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-700">
+            返信フック: {profile.hook}
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {profile.avoid.slice(0, 3).map((x) => (
+            <span
+              key={x}
+              className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700"
+            >
+              注意: {x}
+            </span>
+          ))}
+        </div>
       </section>
 
       {/* 話し方のクセ */}
@@ -413,10 +468,7 @@ export default function PersonaDetailPage() {
               const displayTitle = tp.target_title || "（名称未設定）";
               const displayKey = tp.target_key || "unknown";
               const displayVibes = tp.target_vibe_tags ?? [];
-              const icon = resolveIcon(
-                tp.target_icon ?? null,
-                tp.target_key ?? "unknown"
-              );
+              const icon = resolveIcon(tp.target_icon ?? null, tp.target_key ?? "unknown", displayTitle);
 
               const relationLabel =
                 tp.relation_label ?? autoRelationLabel(mode, tp.score);
@@ -491,7 +543,8 @@ export default function PersonaDetailPage() {
                   const displayVibes = row.target_vibe_tags ?? [];
                   const icon = resolveIcon(
                     row.target_icon ?? null,
-                    row.target_key ?? "unknown"
+                    row.target_key ?? "unknown",
+                    displayTitle
                   );
                   const relationLabel =
                     row.relation_label ?? autoRelationLabel(mode, row.score);
