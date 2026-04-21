@@ -15,23 +15,20 @@ function useAsyncListState<T>(initial?: { items?: T[]; hasMore?: boolean; offset
   const actions = useMemo(
     () => ({
       start: (refresh = false) => dispatch({ type: "start", refresh }),
-      success: (items: T[], opts?: { reset?: boolean; hasMore?: boolean; offset?: number }) =>
-        dispatch({
-          type: "success",
-          items,
-          reset: opts?.reset,
-          hasMore: opts?.hasMore,
-          offset: opts?.offset,
-        }),
       replace: (items: T[], opts?: { hasMore?: boolean; offset?: number }) =>
         dispatch({ type: "replace", items, hasMore: opts?.hasMore, offset: opts?.offset }),
       append: (items: T[], opts?: { hasMore?: boolean; offset?: number }) =>
         dispatch({ type: "append", items, hasMore: opts?.hasMore, offset: opts?.offset }),
       fail: (error: string | null) => dispatch({ type: "error", error }),
-      setError: (error: string | null) => dispatch({ type: "setError", error }),
-      patch: (patch: Partial<AsyncListState<T>>) => dispatch({ type: "patch", patch }),
-      reset: (keepError = false) => dispatch({ type: "reset", keepError }),
-      dispatch,
+      reset: (arg?: boolean | { keepError?: boolean; hasMore?: boolean; offset?: number }) => {
+        const opts = typeof arg === "boolean" ? { keepError: arg } : (arg ?? {});
+        dispatch({
+          type: "reset",
+          keepError: opts.keepError,
+          hasMore: opts.hasMore,
+          offset: opts.offset,
+        });
+      },
     }),
     []
   );

@@ -2,11 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  buildTimelineLearningActionTips,
+  buildTimelineLearningSectionSummary,
+  buildTimelineWeightTrendDeltaSummary,
+  buildTimelineWeightTrendRatios,
+  formatTimelineWeightPointLabel,
   pickTimelineHighlights,
   rankTimelineByUserSignals,
   resolvePostAuthorIdentity,
   resolveSocialIdentityLabels,
   splitByOpenedIds,
+  type TimelineSignalWeightsHistoryPoint,
   type TimelineSignalWeights,
 } from "@sns/core";
 import { fetchFeedPage, fetchTimelineSignals, updateTimelineSignalWeights } from "@/lib/socialDataClient";
@@ -33,6 +39,9 @@ export default function HomeFeed() {
   const [savedPostIds, setSavedPostIds] = useState<string[]>([]);
   const [timelineSignalWeights, setTimelineSignalWeights] = useState<TimelineSignalWeights | null>(null);
   const [timelineSignalWeightsSamples, setTimelineSignalWeightsSamples] = useState<number>(0);
+  const [timelineSignalWeightsHistory, setTimelineSignalWeightsHistory] = useState<
+    TimelineSignalWeightsHistoryPoint[]
+  >([]);
   const openStateRequestedIds = useRef<Set<string>>(new Set());
   const persistedOpenedIds = useRef<Set<string>>(new Set());
   const weightsPersistSigRef = useRef<string>("");
@@ -82,6 +91,60 @@ export default function HomeFeed() {
       }),
     [followedAuthorIds, interestedAuthorIds, items, openedIds, savedPostIds]
   );
+  const timelineWeightTrendBars = useMemo(() => {
+    return buildTimelineWeightTrendRatios(timelineSignalWeightsHistory, 16).map((v) =>
+      Math.round(v * 100)
+    );
+  }, [timelineSignalWeightsHistory]);
+  const timelineWeightTrendDeltaLabels = useMemo(() => {
+    const delta = buildTimelineWeightTrendDeltaSummary(timelineSignalWeightsHistory, 10);
+    if (!delta) return null;
+    return {
+      save: formatTimelineWeightPointLabel(delta.saved, { signed: true }),
+      follow: formatTimelineWeightPointLabel(delta.followed, { signed: true }),
+      openPenalty: formatTimelineWeightPointLabel(delta.openedPenalty, { signed: true }),
+    };
+  }, [timelineSignalWeightsHistory]);
+  const timelineLearningSummary = useMemo(
+    () =>
+      buildTimelineLearningSectionSummary({
+        weightsSamples: timelineSignalWeightsSamples,
+        learningInput: {
+          openedCount: Object.keys(openedIds).length,
+          savedCount: savedPostIds.length,
+          followedCount: followedAuthorIds.length,
+        },
+        historyCount: timelineSignalWeightsHistory.length,
+      }),
+    [
+      followedAuthorIds.length,
+      openedIds,
+      savedPostIds.length,
+      timelineSignalWeightsHistory.length,
+      timelineSignalWeightsSamples,
+    ]
+  );
+  const timelineLearningActionTips = useMemo(
+    () =>
+      buildTimelineLearningActionTips({
+        weightsSamples: timelineSignalWeightsSamples,
+        learningInput: {
+          openedCount: Object.keys(openedIds).length,
+          savedCount: savedPostIds.length,
+          followedCount: followedAuthorIds.length,
+        },
+        weights: timelineSignalWeights ?? null,
+        history: timelineSignalWeightsHistory,
+      }),
+    [
+      followedAuthorIds.length,
+      openedIds,
+      savedPostIds.length,
+      timelineSignalWeights,
+      timelineSignalWeightsHistory,
+      timelineSignalWeightsSamples,
+    ]
+  );
 
   useEffect(() => {
     let alive = true;
@@ -106,6 +169,11 @@ export default function HomeFeed() {
           setTimelineSignalWeights(json.weights);
         }
         setTimelineSignalWeightsSamples(Math.max(0, Math.floor(Number(json.weightsSamples ?? 0) || 0)));
+        setTimelineSignalWeightsHistory(
+          Array.isArray(json.weightsHistory)
+            ? (json.weightsHistory as TimelineSignalWeightsHistoryPoint[])
+            : []
+        );
         if (opened.length > 0) {
           opened.forEach((x) => persistedOpenedIds.current.add(x));
           setOpenedIds((prev) => {
@@ -152,6 +220,20 @@ export default function HomeFeed() {
         }
         if (json.weightsSamples != null) {
           setTimelineSignalWeightsSamples(Math.max(0, Math.floor(Number(json.weightsSamples) || 0)));
+        }
+        if (Array.isArray(json.weightsHistory) && json.weightsHistory.length > 0) {
+          setTimelineSignalWeightsHistory((prev) => {
+            const merged = [...prev, ...(json.weightsHistory as TimelineSignalWeightsHistoryPoint[])];
+            const seen = new Set<string>();
+            const deduped: TimelineSignalWeightsHistoryPoint[] = [];
+            merged.forEach((point) => {
+              const key = `${point.at}|${point.samples}`;
+              if (seen.has(key)) return;
+              seen.add(key);
+              deduped.push(point);
+            });
+            return deduped.slice(-24);
+          });
         }
       } catch {
         // ignore: ranking still works with local learned weights
@@ -251,18 +333,63 @@ export default function HomeFeed() {
       {(timelineHighlights.popular.length > 0 || timelineHighlights.forYou.length > 0) && (
         <section className="space-y-3 rounded-xl border bg-white p-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">見つけやすく表示</h2>
+            <h2 className="text-sm font-semibold">{timelineLearningSummary.title}</h2>
             <span className="text-xs opacity-70">
               人気 {timelineHighlights.popular.length} / あなた向け {timelineHighlights.forYou.length}
             </span>
           </div>
           <p className="text-xs text-slate-500">
-            反応されやすい投稿と、あなたが開きやすい傾向の投稿を先にまとめています。
+            {timelineLearningSummary.stageDescription}
           </p>
+          {timelineLearningActionTips.length > 0 && (
+            <div className="rounded-lg border bg-blue-50 px-3 py-2">
+              <div className="text-[11px] font-semibold text-blue-900">おすすめを育てるコツ</div>
+              <div className="mt-1 space-y-1">
+                {timelineLearningActionTips.map((tip) => (
+                  <div key={tip.key} className="text-[11px] text-blue-800">
+                    ・{tip.label}: {tip.detail}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {timelineSignalWeightsSamples > 0 && (
-            <p className="text-[11px] text-slate-400">
-              TL学習: {timelineSignalWeightsSamples}回更新済み（フォロー/保存/開封を反映）
-            </p>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[11px] text-slate-400">
+                  {timelineLearningSummary.stageLabel} / 更新 {timelineSignalWeightsSamples}回（フォロー/保存/開封を反映）
+                </p>
+                <a
+                  href="/dashboard/timeline-learning"
+                  className="text-[11px] underline text-blue-700 whitespace-nowrap"
+                >
+                  学習/おすすめ
+                </a>
+              </div>
+              {timelineWeightTrendBars.length > 1 && (
+                <div className="rounded-lg border bg-slate-50 px-2 py-2">
+                  <div className="flex h-10 items-end gap-1">
+                    {timelineWeightTrendBars.map((h, idx) => (
+                      <div
+                        key={`tl-weight-bar-${idx}`}
+                        className="flex-1 rounded-sm bg-gradient-to-t from-blue-500 to-cyan-300"
+                        style={{ height: `${Math.max(8, h)}%` }}
+                      />
+                    ))}
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-slate-500">
+                    <span>重み推移</span>
+                    {timelineWeightTrendDeltaLabels ? (
+                      <>
+                        <span>保存 {timelineWeightTrendDeltaLabels.save}pt</span>
+                        <span>フォロー {timelineWeightTrendDeltaLabels.follow}pt</span>
+                        <span>開封抑制 {timelineWeightTrendDeltaLabels.openPenalty}pt</span>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {timelineHighlights.popular.length > 0 && (

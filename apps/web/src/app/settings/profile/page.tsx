@@ -2,6 +2,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  buildTimelineLearningActionTips,
+  buildTimelineLearningSectionSummary,
+  buildTimelineWeightTrendDeltaSummary,
+  buildTimelineWeightTrendRatios,
+  formatTimelineWeightPointLabel,
+  type TimelineSignalWeightsHistoryPoint,
+} from "@sns/core";
 import { supabaseClient as supabase } from "@/lib/supabase/client";
 
 export default function ProfileSettings() {
@@ -23,6 +31,12 @@ export default function ProfileSettings() {
     openRate: number;
     enabledDevices: number;
     totalDevices: number;
+  } | null>(null);
+  const [timelineLearning, setTimelineLearning] = useState<{
+    available: boolean;
+    weightsSamples: number;
+    learningInput: { openedCount: number; savedCount: number; followedCount: number };
+    weightsHistory: TimelineSignalWeightsHistoryPoint[];
   } | null>(null);
 
   useEffect(() => {
@@ -58,6 +72,23 @@ export default function ProfileSettings() {
           totalDevices: Array.isArray(pushJson.devices) ? pushJson.devices.length : 0,
         });
       }
+
+      const tlRes = await fetch("/api/me/timeline-signals", { cache: "no-store" });
+      const tlJson = await tlRes.json().catch(() => null);
+      if (tlRes.ok && tlJson) {
+        setTimelineLearning({
+          available: !Boolean(tlJson.degraded?.timelineWeightsMissing),
+          weightsSamples: Math.max(0, Math.floor(Number(tlJson.weightsSamples ?? 0) || 0)),
+          learningInput: {
+            openedCount: Math.max(0, Math.floor(Number(tlJson.learningInput?.openedCount ?? 0) || 0)),
+            savedCount: Math.max(0, Math.floor(Number(tlJson.learningInput?.savedCount ?? 0) || 0)),
+            followedCount: Math.max(0, Math.floor(Number(tlJson.learningInput?.followedCount ?? 0) || 0)),
+          },
+          weightsHistory: Array.isArray(tlJson.weightsHistory)
+            ? (tlJson.weightsHistory as TimelineSignalWeightsHistoryPoint[])
+            : [],
+        });
+      }
     })();
   }, [sb]);
 
@@ -71,6 +102,37 @@ export default function ProfileSettings() {
     const score = Math.round((checks.filter(Boolean).length / checks.length) * 100);
     return { score, checks };
   }, [avatar, bio, displayName, handle]);
+
+  const timelineLearningSummary = useMemo(
+    () =>
+      buildTimelineLearningSectionSummary({
+        weightsSamples: timelineLearning?.weightsSamples ?? 0,
+        learningInput: timelineLearning?.learningInput ?? null,
+        historyCount: timelineLearning?.weightsHistory.length ?? 0,
+        weightsAvailable: timelineLearning?.available ?? true,
+      }),
+    [timelineLearning]
+  );
+  const timelineLearningBars = useMemo(
+    () =>
+      buildTimelineWeightTrendRatios(timelineLearning?.weightsHistory ?? [], 16).map((v) =>
+        Math.round(v * 100)
+      ),
+    [timelineLearning?.weightsHistory]
+  );
+  const timelineLearningDelta = useMemo(
+    () => buildTimelineWeightTrendDeltaSummary(timelineLearning?.weightsHistory ?? [], 10),
+    [timelineLearning?.weightsHistory]
+  );
+  const timelineLearningActionTips = useMemo(
+    () =>
+      buildTimelineLearningActionTips({
+        weightsSamples: timelineLearning?.weightsSamples ?? 0,
+        learningInput: timelineLearning?.learningInput ?? null,
+        history: timelineLearning?.weightsHistory ?? [],
+      }),
+    [timelineLearning]
+  );
 
   async function save() {
     if (!uid) return;
@@ -224,6 +286,75 @@ export default function ProfileSettings() {
       </div>
 
       <div className="border rounded-lg p-4 space-y-2 bg-white">
+        <div className="font-semibold">{timelineLearningSummary.title}</div>
+        <div className="text-sm opacity-80">{timelineLearningSummary.stageDescription}</div>
+        {timelineLearningActionTips.length > 0 && (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 space-y-1">
+            <div className="text-xs font-semibold text-blue-900">おすすめを育てるコツ</div>
+            {timelineLearningActionTips.map((tip) => (
+              <div key={`profile-tl-tip-${tip.key}`} className="text-xs text-blue-800">
+                ・{tip.label}: {tip.detail}
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex flex-wrap gap-2 text-xs">
+          {timelineLearningSummary.metrics.map((m) => (
+            <span key={m.key} className="inline-flex items-center rounded-full border bg-slate-50 px-2 py-0.5">
+              {m.label} {m.value}
+            </span>
+          ))}
+          <span className="inline-flex items-center rounded-full border bg-blue-50 text-blue-700 px-2 py-0.5">
+            {timelineLearningSummary.stageLabel}
+          </span>
+        </div>
+        {!timelineLearning?.available ? (
+          <div className="text-sm text-amber-700">{timelineLearningSummary.unavailableHint}</div>
+        ) : timelineLearningBars.length > 1 ? (
+          <div className="rounded-lg border bg-slate-50 px-2 py-2">
+            <div className="flex h-10 items-end gap-1">
+              {timelineLearningBars.map((h, idx) => (
+                <div
+                  key={`profile-tl-learning-bar-${idx}`}
+                  className="flex-1 rounded-sm bg-gradient-to-t from-blue-500 to-cyan-300"
+                  style={{ height: `${Math.max(8, h)}%` }}
+                />
+              ))}
+            </div>
+            <div className="mt-1 text-[11px] text-slate-500">{timelineLearningSummary.chartCaption}</div>
+            {timelineLearningDelta ? (
+              <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                <span>
+                  保存 {formatTimelineWeightPointLabel(timelineLearningDelta.saved, { signed: true, suffix: "pt" })}
+                </span>
+                <span>
+                  フォロー{" "}
+                  {formatTimelineWeightPointLabel(timelineLearningDelta.followed, {
+                    signed: true,
+                    suffix: "pt",
+                  })}
+                </span>
+                <span>
+                  開封抑制{" "}
+                  {formatTimelineWeightPointLabel(timelineLearningDelta.openedPenalty, {
+                    signed: true,
+                    suffix: "pt",
+                  })}
+                </span>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="text-sm opacity-70">{timelineLearningSummary.historyEmptyHint}</div>
+        )}
+        <div className="flex flex-wrap gap-3 text-sm">
+          <a href="/dashboard/timeline-learning" className="underline">
+            {timelineLearningSummary.title} を詳しく見る
+          </a>
+        </div>
+      </div>
+
+      <div className="border rounded-lg p-4 space-y-2 bg-white">
         <div className="font-semibold">成績通知 / 配信運用</div>
         {!pushSummary ? (
           <div className="text-sm opacity-70">配信状態を読み込み中…</div>
@@ -244,6 +375,9 @@ export default function ProfileSettings() {
         <div className="flex flex-wrap gap-3 text-sm">
           <a href="/dashboard/push-delivery" className="underline">
             Push配信ダッシュボード
+          </a>
+          <a href="/dashboard/timeline-learning" className="underline">
+            学習/おすすめ
           </a>
           <a href="/dashboard/ab-timeseries" className="underline">
             A/B時系列

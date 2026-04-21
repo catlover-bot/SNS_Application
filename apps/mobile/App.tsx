@@ -1,6 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   Alert,
   Image,
   Linking,
@@ -19,22 +20,40 @@ import {
   analyzeLieScore,
   applyPersonaCalibration,
   analyzePersonaBuzz,
+  buildLieScoreLearnedContextKey,
   buildPersonaBlendRewrites,
+  buildTimelineLearningActionTips,
+  buildPersonaPostingGuide,
   buildPersonaProfile,
   buildPersonaRewrites,
+  buildLieScoreLearnedContextTrendRatios,
+  buildTimelineLearningSectionSummary,
+  buildTimelineWeightTrendDeltaSummary,
+  buildTimelineWeightTrendRatios,
   computeLieScore,
   computePersonaActualEngagementScore,
   computePersonaCalibrationStat,
   calibrateLieScoreWithFeedback,
+  deriveLieScoreLearnedContextObservation,
   evolveTimelineSignalWeightsState,
   extractBuzzScoreFromAnalysis,
   extractPersonaKeyFromAnalysis,
+  inferLieScoreAgeHours,
+  type LieScoreAttachmentKind,
+  inferLieScoreTextLengthBucket,
+  inferLieScoreTimeBucket,
+  inferLieScoreWeekdayBucket,
+  type LieScoreLearnedContextCoefficient,
+  type LieScoreLearnedContextHistoryPoint,
+  formatTimelineWeightPointLabel,
+  normalizeLieScorePostFormat,
   pickTimelineHighlights,
   rankTimelineByUserSignals,
   resolvePostAuthorIdentity,
   resolveSocialIdentityLabels,
   splitByOpenedIds,
   splitByReadAt,
+  type TimelineSignalWeightsHistoryPoint,
   type TimelineSignalWeights,
 } from "@sns/core";
 import {
@@ -58,7 +77,11 @@ import {
   loadMobileNotifications,
   loadMobilePostsByIdsEnriched,
   loadMobileSavedFeedRows,
+  loadMobileLieScoreContextCoefficient,
+  loadMobileLieScoreContextCoefficientHistory,
+  loadMobileLieScoreContextCoefficientHistoryDaily,
   loadMobileTimelineSignalWeights,
+  upsertMobileLieScoreContextCoefficientObservation,
   upsertMobileTimelineSignalWeights,
 } from "./src/services/socialData";
 
@@ -916,6 +939,99 @@ function toPercent01(value: number | null | undefined): number {
   return Math.max(0, Math.min(100, Math.round(raw * 100)));
 }
 
+function extractLieScorePostFormat(analysis: any): string | null {
+  const direct = String(analysis?.post_format ?? analysis?.postFormat ?? "").trim();
+  if (direct) return direct;
+  const personaFmt = String(analysis?.persona?.post_format ?? "").trim();
+  if (personaFmt) return personaFmt;
+  const personaOutFmt = String(analysis?.persona_output?.post_format ?? "").trim();
+  return personaOutFmt || null;
+}
+
+function inferAttachmentKindForLieScore(item: {
+  analysis?: any;
+  text?: string | null;
+  body?: string | null;
+}): LieScoreAttachmentKind {
+  const analysis = (item as any)?.analysis;
+  const content = String((item as any)?.text ?? (item as any)?.body ?? "");
+  let hasImage = false;
+  let hasVideo = false;
+  let hasUrl = false;
+  const attachments = [
+    ...(Array.isArray(analysis?.attachments) ? analysis.attachments : []),
+    ...(Array.isArray(analysis?.media) ? analysis.media : []),
+    ...(Array.isArray(analysis?.images) ? analysis.images : []),
+  ];
+  attachments.forEach((raw: any) => {
+    const text = String(
+      raw?.type ?? raw?.mime_type ?? raw?.mime ?? raw?.kind ?? raw?.url ?? raw?.src ?? raw ?? ""
+    ).toLowerCase();
+    if (!text) return;
+    if (/video|mp4|mov|webm|m3u8/.test(text)) hasVideo = true;
+    if (/image|png|jpe?g|gif|webp|heic|avif/.test(text)) hasImage = true;
+    if (/https?:\/\//.test(text)) hasUrl = true;
+  });
+  if (Number(analysis?.media_count ?? analysis?.image_count ?? analysis?.attachments_count ?? 0) > 0) {
+    hasImage = hasImage || Number(analysis?.image_count ?? 0) > 0 || !hasVideo;
+  }
+  const urls = content.match(/https?:\/\/\S+/gi) ?? [];
+  urls.forEach((u) => {
+    hasUrl = true;
+    if (/\.(mp4|mov|webm)(\?|$)/i.test(u)) hasVideo = true;
+    if (/\.(png|jpe?g|gif|webp|heic|avif)(\?|$)/i.test(u)) hasImage = true;
+  });
+  const kinds = [hasImage, hasVideo, hasUrl].filter(Boolean).length;
+  if (kinds > 1) return "mixed";
+  if (hasVideo) return "video";
+  if (hasImage) return "image";
+  if (hasUrl) return "url";
+  return "none";
+}
+
+function inferAttachmentMixKeyForLieScore(item: {
+  analysis?: any;
+  text?: string | null;
+  body?: string | null;
+}): string {
+  const analysis = (item as any)?.analysis;
+  const content = String((item as any)?.text ?? (item as any)?.body ?? "");
+  let imageCount = 0;
+  let videoCount = 0;
+  let urlCount = 0;
+  const attachments = [
+    ...(Array.isArray(analysis?.attachments) ? analysis.attachments : []),
+    ...(Array.isArray(analysis?.media) ? analysis.media : []),
+    ...(Array.isArray(analysis?.images) ? analysis.images : []),
+  ];
+  attachments.forEach((raw: any) => {
+    const text = String(
+      raw?.type ?? raw?.mime_type ?? raw?.mime ?? raw?.kind ?? raw?.url ?? raw?.src ?? raw ?? ""
+    ).toLowerCase();
+    if (!text) return;
+    if (/video|mp4|mov|webm|m3u8/.test(text)) videoCount += 1;
+    if (/image|png|jpe?g|gif|webp|heic|avif/.test(text)) imageCount += 1;
+    if (/https?:\/\//.test(text)) urlCount += 1;
+  });
+  const urls = content.match(/https?:\/\/\S+/gi) ?? [];
+  urls.forEach((u) => {
+    urlCount += 1;
+    if (/\.(mp4|mov|webm)(\?|$)/i.test(u)) videoCount += 1;
+    if (/\.(png|jpe?g|gif|webp|heic|avif)(\?|$)/i.test(u)) imageCount += 1;
+  });
+  if (imageCount <= 0 && videoCount <= 0 && urlCount <= 0) return "none";
+  const b = (n: number) => (n <= 0 ? 0 : n === 1 ? 1 : 2);
+  return `i${b(imageCount)}v${b(videoCount)}u${b(urlCount)}`;
+}
+
+function lieScoreAttachmentKindLabel(kind?: LieScoreAttachmentKind | null) {
+  if (kind === "image") return "画像";
+  if (kind === "video") return "動画";
+  if (kind === "url") return "URL";
+  if (kind === "mixed") return "複合";
+  return "なし";
+}
+
 function toCompatPercent(value: number | null | undefined): number {
   const raw = Number(value ?? 0);
   if (!Number.isFinite(raw) || raw <= 0) return 0;
@@ -948,6 +1064,33 @@ function formatDateTime(value: string | null | undefined) {
   const ts = Date.parse(v);
   if (!Number.isFinite(ts)) return "未取得";
   return new Date(ts).toLocaleString("ja-JP");
+}
+
+function formatPersonaApiErrorMessage(error: any, fallback: string) {
+  const raw = String(error?.message ?? "").trim();
+  if (!raw) return fallback;
+  if (/Network request failed/i.test(raw)) {
+    return `${fallback}（ネットワーク不通、または Web API が未起動の可能性があります）`;
+  }
+  if (/Failed to fetch/i.test(raw)) {
+    return `${fallback}（接続先に到達できませんでした）`;
+  }
+  return raw;
+}
+
+function personaCatalogDetailScrollStorageKey(args: {
+  key?: string | null;
+  tab?: "compat" | "dialogue" | "examples" | null;
+}) {
+  const key = String(args.key ?? "").trim();
+  const tab = String(args.tab ?? "").trim();
+  if (!key || !tab) return null;
+  return `${key}:${tab}`;
+}
+
+function formatLieLearnedBiasPt(value?: number | null) {
+  const n = Number(value ?? 0) || 0;
+  return `${n > 0 ? "+" : ""}${Math.round(n * 100)}pt`;
 }
 
 function passwordStrengthLabel(password: string | null | undefined) {
@@ -1771,6 +1914,22 @@ export default function App() {
     truthTrueVotes: 0,
     truthFalseVotes: 0,
   });
+  const [detailLieLearnedContext, setDetailLieLearnedContext] =
+    useState<LieScoreLearnedContextCoefficient | null>(null);
+  const [detailLieLearnedAvailable, setDetailLieLearnedAvailable] = useState(true);
+  const [detailLieLearnedHistory, setDetailLieLearnedHistory] = useState<LieScoreLearnedContextHistoryPoint[]>(
+    []
+  );
+  const [detailLieLearnedHistoryAvailable, setDetailLieLearnedHistoryAvailable] = useState(true);
+  const [detailLieLearnedHistoryDaily, setDetailLieLearnedHistoryDaily] = useState<
+    LieScoreLearnedContextHistoryPoint[]
+  >([]);
+  const [detailLieLearnedHistoryDailyAvailable, setDetailLieLearnedHistoryDailyAvailable] = useState(true);
+  const [detailLieLearnedHistoryMode, setDetailLieLearnedHistoryMode] = useState<
+    "raw" | "daily" | "overlay"
+  >("overlay");
+  const detailLieLearnedSigRef = useRef<string>("");
+  const [detailOpenSource, setDetailOpenSource] = useState<string>("");
   const [detailSequenceIds, setDetailSequenceIds] = useState<string[]>([]);
   const [detailSequenceIndex, setDetailSequenceIndex] = useState(0);
   const [replyText, setReplyText] = useState("");
@@ -1835,102 +1994,43 @@ export default function App() {
   const [personaCatalogDetailTab, setPersonaCatalogDetailTab] = useState<
     "compat" | "dialogue" | "examples"
   >("compat");
+  const [personaCatalogDetailTabByKey, setPersonaCatalogDetailTabByKey] = useState<
+    Record<string, "compat" | "dialogue" | "examples">
+  >({});
   const [personaCatalogDetailCompatItems, setPersonaCatalogDetailCompatItems] = useState<PersonaCompatItem[]>([]);
   const [personaCatalogDetailCompatLoading, setPersonaCatalogDetailCompatLoading] = useState(false);
   const [personaCatalogDetailCompatError, setPersonaCatalogDetailCompatError] = useState<string | null>(null);
   const [personaCatalogDetailDialogueTargetKey, setPersonaCatalogDetailDialogueTargetKey] = useState("");
+  const [personaCatalogDetailDialogueTargetByKey, setPersonaCatalogDetailDialogueTargetByKey] = useState<
+    Record<string, string>
+  >({});
   const [personaCatalogDetailExamples, setPersonaCatalogDetailExamples] = useState<FeedItem[]>([]);
   const [personaCatalogDetailExamplesLoading, setPersonaCatalogDetailExamplesLoading] = useState(false);
   const [personaCatalogDetailExamplesError, setPersonaCatalogDetailExamplesError] = useState<string | null>(null);
+  const [personaCatalogDetailReturnContext, setPersonaCatalogDetailReturnContext] = useState<{
+    key: string;
+    tab: "compat" | "dialogue" | "examples";
+    scrollY?: number | null;
+    examplePostId?: string | null;
+  } | null>(null);
+  const personaCatalogDetailScrollRef = useRef<ScrollView | null>(null);
+  const personaCatalogDetailScrollYRef = useRef(0);
+  const personaCatalogDetailScrollByKeyTabRef = useRef<Record<string, number>>({});
+  const personaCatalogDetailExampleLayoutYRef = useRef<Record<string, number>>({});
+  const personaCatalogDetailExampleHighlightPulse = useRef(new Animated.Value(0)).current;
+  const [personaCatalogDetailPendingRestoreY, setPersonaCatalogDetailPendingRestoreY] = useState<number | null>(
+    null
+  );
+  const [personaCatalogDetailPendingSnapExampleId, setPersonaCatalogDetailPendingSnapExampleId] = useState<
+    string | null
+  >(null);
   const [timelineSignalWeights, setTimelineSignalWeights] = useState<TimelineSignalWeights | null>(null);
   const [timelineSignalWeightsSamples, setTimelineSignalWeightsSamples] = useState(0);
   const [timelineSignalWeightsAvailable, setTimelineSignalWeightsAvailable] = useState(true);
-
-  const setSavedFeed = useCallback(
-    (next: SavedFeedItem[] | ((prev: SavedFeedItem[]) => SavedFeedItem[])) => {
-      const prev = savedFeedItemsRef.current;
-      const resolved = typeof next === "function" ? (next as (prev: SavedFeedItem[]) => SavedFeedItem[])(prev) : next;
-      savedFeedListActions.replace(resolved);
-    },
-    [savedFeedListActions]
-  );
-  const setSavedFeedLoading = useCallback(
-    (next: boolean) => {
-      if (next) {
-        savedFeedListActions.start(false);
-        return;
-      }
-      savedFeedListActions.patch({ loading: false, refreshing: false });
-    },
-    [savedFeedListActions]
-  );
-  const setSavedFeedError = useCallback(
-    (next: string | null) => savedFeedListActions.setError(next),
-    [savedFeedListActions]
-  );
-  const setSavedFeedOffset = useCallback(
-    (next: number) => savedFeedListActions.patch({ offset: Math.max(0, Math.floor(next || 0)) }),
-    [savedFeedListActions]
-  );
-  const setSavedFeedHasMore = useCallback(
-    (next: boolean) => savedFeedListActions.patch({ hasMore: Boolean(next) }),
-    [savedFeedListActions]
-  );
-
-  const setPersonaFeedItems = useCallback(
-    (next: FeedItem[] | ((prev: FeedItem[]) => FeedItem[])) => {
-      const prev = personaFeedItemsRef.current;
-      const resolved = typeof next === "function" ? (next as (prev: FeedItem[]) => FeedItem[])(prev) : next;
-      personaFeedListActions.replace(resolved);
-    },
-    [personaFeedListActions]
-  );
-  const setPersonaFeedLoading = useCallback(
-    (next: boolean) => {
-      if (next) {
-        personaFeedListActions.start(false);
-        return;
-      }
-      personaFeedListActions.patch({ loading: false, refreshing: false });
-    },
-    [personaFeedListActions]
-  );
-  const setPersonaFeedError = useCallback(
-    (next: string | null) => personaFeedListActions.setError(next),
-    [personaFeedListActions]
-  );
-  const setPersonaFeedOffset = useCallback(
-    (next: number) => personaFeedListActions.patch({ offset: Math.max(0, Math.floor(next || 0)) }),
-    [personaFeedListActions]
-  );
-  const setPersonaFeedHasMore = useCallback(
-    (next: boolean) => personaFeedListActions.patch({ hasMore: Boolean(next) }),
-    [personaFeedListActions]
-  );
-
-  const setNotifications = useCallback(
-    (next: NotificationItem[] | ((prev: NotificationItem[]) => NotificationItem[])) => {
-      const prev = notificationsRef.current;
-      const resolved =
-        typeof next === "function" ? (next as (prev: NotificationItem[]) => NotificationItem[])(prev) : next;
-      notificationsListActions.replace(resolved);
-    },
-    [notificationsListActions]
-  );
-  const setNotificationsLoading = useCallback(
-    (next: boolean) => {
-      if (next) {
-        notificationsListActions.start(false);
-        return;
-      }
-      notificationsListActions.patch({ loading: false, refreshing: false });
-    },
-    [notificationsListActions]
-  );
-  const setNotificationsError = useCallback(
-    (next: string | null) => notificationsListActions.setError(next),
-    [notificationsListActions]
-  );
+  const [timelineSignalWeightsHistory, setTimelineSignalWeightsHistory] = useState<
+    TimelineSignalWeightsHistoryPoint[]
+  >([]);
+  const [timelineWeightsChartVisible, setTimelineWeightsChartVisible] = useState(false);
 
   const composeLieAnalysis = useMemo(() => analyzeLieScore({ text: composeText }), [composeText]);
   const score = composeLieAnalysis.score;
@@ -2100,6 +2200,7 @@ export default function App() {
       setTimelineSignalWeights(null);
       setTimelineSignalWeightsSamples(0);
       setTimelineSignalWeightsAvailable(true);
+      setTimelineSignalWeightsHistory([]);
       timelineSignalWeightPersistSigRef.current = "";
       return;
     }
@@ -2111,6 +2212,9 @@ export default function App() {
         setTimelineSignalWeightsAvailable(res.available !== false);
         setTimelineSignalWeights(res.weights ?? null);
         setTimelineSignalWeightsSamples(Math.max(0, Math.floor(Number(res.samples ?? 0) || 0)));
+        setTimelineSignalWeightsHistory(
+          Array.isArray(res.historyPoints) ? (res.historyPoints as TimelineSignalWeightsHistoryPoint[]) : []
+        );
       } catch {
         if (!alive) return;
         setTimelineSignalWeightsAvailable(false);
@@ -2154,6 +2258,20 @@ export default function App() {
         }
         setTimelineSignalWeights(evolved.weights);
         setTimelineSignalWeightsSamples(evolved.samples);
+        if (saveRes.historyPoint) {
+          setTimelineSignalWeightsHistory((prev) => {
+            const merged = [...prev, saveRes.historyPoint as TimelineSignalWeightsHistoryPoint];
+            const seen = new Set<string>();
+            const deduped: TimelineSignalWeightsHistoryPoint[] = [];
+            merged.forEach((point) => {
+              const key = `${point.at}|${point.samples}`;
+              if (seen.has(key)) return;
+              seen.add(key);
+              deduped.push(point);
+            });
+            return deduped.slice(-24);
+          });
+        }
       } catch {
         // ignore, local ranking still works
       }
@@ -2212,6 +2330,43 @@ export default function App() {
       timelineInterestedPersonaKeys,
       timelineRankedItems,
       timelineSavedPostIds,
+    ]
+  );
+  const timelineWeightTrendHeights = useMemo(
+    () => buildTimelineWeightTrendRatios(timelineSignalWeightsHistory, 14),
+    [timelineSignalWeightsHistory]
+  );
+  const timelineWeightTrendSummary = useMemo(() => {
+    return buildTimelineWeightTrendDeltaSummary(timelineSignalWeightsHistory, 10);
+  }, [timelineSignalWeightsHistory]);
+  const timelineLearningSectionSummary = useMemo(
+    () =>
+      buildTimelineLearningSectionSummary({
+        weightsSamples: timelineSignalWeightsSamples,
+        learningInput: timelineSignalLearningInput,
+        historyCount: timelineSignalWeightsHistory.length,
+        weightsAvailable: timelineSignalWeightsAvailable,
+      }),
+    [
+      timelineSignalLearningInput,
+      timelineSignalWeightsAvailable,
+      timelineSignalWeightsHistory.length,
+      timelineSignalWeightsSamples,
+    ]
+  );
+  const timelineLearningActionTips = useMemo(
+    () =>
+      buildTimelineLearningActionTips({
+        weightsSamples: timelineSignalWeightsSamples,
+        learningInput: timelineSignalLearningInput,
+        weights: timelineSignalWeights ?? null,
+        history: timelineSignalWeightsHistory,
+      }),
+    [
+      timelineSignalLearningInput,
+      timelineSignalWeights,
+      timelineSignalWeightsHistory,
+      timelineSignalWeightsSamples,
     ]
   );
   const { fresh: followingFreshItems, past: followingPastItems } = useMemo(
@@ -2381,6 +2536,13 @@ export default function App() {
     () => (process.env.EXPO_PUBLIC_WEB_BASE_URL_DEV ?? "").trim().replace(/\/$/, ""),
     []
   );
+  const personaApiWebBaseUrl = useMemo(() => {
+    if (__DEV__) {
+      // Avoid noisy network failures in Expo dev unless an explicit local Web API base is configured.
+      return webBaseUrlDevOverride;
+    }
+    return webBaseUrl;
+  }, [webBaseUrl, webBaseUrlDevOverride]);
   const personaImageHostBaseUrl = useMemo(() => {
     if (__DEV__) return webBaseUrlDevOverride || "http://127.0.0.1:3000";
     if (webBaseUrl) return webBaseUrl;
@@ -2978,8 +3140,7 @@ export default function App() {
     async (reset = false) => {
       if (!userId) return;
       const offset = reset ? 0 : savedFeedOffset;
-      setSavedFeedLoading(true);
-      setSavedFeedError(null);
+      savedFeedListActions.start(reset);
 
       try {
         let collectionAvailable = true;
@@ -2991,10 +3152,8 @@ export default function App() {
         });
         if (savedPage.unsupportedCollectionFilter) {
           setSavedCollectionsAvailable(false);
-          setSavedFeed([]);
-          setSavedFeedOffset(0);
-          setSavedFeedHasMore(false);
-          setSavedFeedError("コレクション機能DB未適用のため、分類フィルタは利用できません。");
+          savedFeedListActions.replace([], { offset: 0, hasMore: false });
+          savedFeedListActions.fail("コレクション機能DB未適用のため、分類フィルタは利用できません。");
           return;
         }
         collectionAvailable = savedPage.collectionAvailable;
@@ -3030,40 +3189,37 @@ export default function App() {
           })
           .filter(Boolean) as SavedFeedItem[];
 
-        setSavedFeed((prev) => {
-          if (reset) return items;
-          const next = [...prev];
+        const nextOffset = offset + rows.length;
+        const hasMoreNext = totalCount != null ? nextOffset < totalCount : rows.length >= SAVED_FEED_PAGE;
+        if (reset) {
+          savedFeedListActions.replace(items, { offset: nextOffset, hasMore: hasMoreNext });
+        } else {
+          const prev = savedFeedItemsRef.current;
+          const next: SavedFeedItem[] = [...prev];
           const seen = new Set(prev.map((x) => x.id));
           items.forEach((item) => {
             if (seen.has(item.id)) return;
             next.push(item);
             seen.add(item.id);
           });
-          return next;
-        });
-        const nextOffset = offset + rows.length;
-        setSavedFeedOffset(nextOffset);
-        setSavedFeedHasMore(
-          totalCount != null ? nextOffset < totalCount : rows.length >= SAVED_FEED_PAGE
-        );
+          savedFeedListActions.replace(next, { offset: nextOffset, hasMore: hasMoreNext });
+        }
         if (reset) {
           void loadSavedCollectionsSummary();
         }
       } catch (e: any) {
-        setSavedFeedError(e?.message ?? "保存一覧の取得に失敗しました");
+        const message = e?.message ?? "保存一覧の取得に失敗しました";
         if (reset) {
-          setSavedFeed([]);
-          setSavedFeedOffset(0);
-          setSavedFeedHasMore(false);
+          savedFeedListActions.replace([], { offset: 0, hasMore: false });
         }
-      } finally {
-        setSavedFeedLoading(false);
+        savedFeedListActions.fail(message);
       }
     },
     [
       isBlockedAuthor,
       loadPostsByIdsForSaved,
       loadSavedCollectionsSummary,
+      savedFeedListActions,
       savedCollectionKey,
       savedFeedOffset,
       userId,
@@ -3243,20 +3399,48 @@ export default function App() {
 
   useEffect(() => {
     const key = String(personaCatalogDetail?.key ?? "").trim();
-    setPersonaCatalogDetailTab("compat");
-    setPersonaCatalogDetailDialogueTargetKey("");
     if (!key) {
+      setPersonaCatalogDetailTab("compat");
+      setPersonaCatalogDetailDialogueTargetKey("");
       setPersonaCatalogDetailCompatItems([]);
       setPersonaCatalogDetailCompatError(null);
       setPersonaCatalogDetailExamples([]);
       setPersonaCatalogDetailExamplesError(null);
+      personaCatalogDetailScrollYRef.current = 0;
       return;
     }
+    const initialTab = personaCatalogDetailTabByKey[key] ?? "compat";
+    setPersonaCatalogDetailTab(initialTab);
+    setPersonaCatalogDetailDialogueTargetKey(personaCatalogDetailDialogueTargetByKey[key] ?? "");
+    const restoreFromContext =
+      personaCatalogDetailReturnContext &&
+      personaCatalogDetailReturnContext.key === key &&
+      personaCatalogDetailReturnContext.tab === initialTab &&
+      Number.isFinite(Number(personaCatalogDetailReturnContext.scrollY ?? NaN))
+        ? Math.max(0, Number(personaCatalogDetailReturnContext.scrollY ?? 0))
+        : null;
+    const storageKey = personaCatalogDetailScrollStorageKey({ key, tab: initialTab });
+    const restoreFromMap =
+      storageKey && Number.isFinite(Number(personaCatalogDetailScrollByKeyTabRef.current[storageKey] ?? NaN))
+        ? Math.max(0, Number(personaCatalogDetailScrollByKeyTabRef.current[storageKey] ?? 0))
+        : null;
+    setPersonaCatalogDetailPendingRestoreY(restoreFromContext ?? restoreFromMap ?? 0);
+    setPersonaCatalogDetailPendingSnapExampleId(
+      personaCatalogDetailReturnContext &&
+        personaCatalogDetailReturnContext.key === key &&
+        personaCatalogDetailReturnContext.tab === "examples"
+        ? String(personaCatalogDetailReturnContext.examplePostId ?? "").trim() || null
+        : null
+    );
     void Promise.allSettled([
       loadPersonaCatalogDetailCompat(key),
       loadPersonaCatalogDetailExamples(key),
     ]);
-  }, [loadPersonaCatalogDetailCompat, loadPersonaCatalogDetailExamples, personaCatalogDetail?.key]);
+  }, [
+    loadPersonaCatalogDetailCompat,
+    loadPersonaCatalogDetailExamples,
+    personaCatalogDetail?.key,
+  ]);
 
   useEffect(() => {
     if (!personaCatalogDetailCompatItems.length) return;
@@ -3266,6 +3450,172 @@ export default function App() {
         : personaCatalogDetailCompatItems[0]?.targetKey ?? ""
     );
   }, [personaCatalogDetailCompatItems]);
+
+  useEffect(() => {
+    const key = String(personaCatalogDetail?.key ?? "").trim();
+    if (!key) return;
+    setPersonaCatalogDetailTabByKey((prev) =>
+      prev[key] === personaCatalogDetailTab ? prev : { ...prev, [key]: personaCatalogDetailTab }
+    );
+    const storageKey = personaCatalogDetailScrollStorageKey({ key, tab: personaCatalogDetailTab });
+    if (storageKey && Number.isFinite(Number(personaCatalogDetailScrollByKeyTabRef.current[storageKey] ?? NaN))) {
+      setPersonaCatalogDetailPendingRestoreY(
+        Math.max(0, Number(personaCatalogDetailScrollByKeyTabRef.current[storageKey] ?? 0))
+      );
+    } else {
+      setPersonaCatalogDetailPendingRestoreY(0);
+    }
+  }, [personaCatalogDetail?.key, personaCatalogDetailTab]);
+
+  useEffect(() => {
+    const key = String(personaCatalogDetail?.key ?? "").trim();
+    const target = String(personaCatalogDetailDialogueTargetKey ?? "").trim();
+    if (!key || !target) return;
+    setPersonaCatalogDetailDialogueTargetByKey((prev) =>
+      prev[key] === target ? prev : { ...prev, [key]: target }
+    );
+  }, [personaCatalogDetail?.key, personaCatalogDetailDialogueTargetKey]);
+
+  const reopenPersonaCatalogDetailFromContext = useCallback(() => {
+    const ctx = personaCatalogDetailReturnContext;
+    if (!ctx) return;
+    const key = String(ctx.key ?? "").trim();
+    if (!key) return;
+    const def =
+      personaCatalogDefs.find((x) => x.key === key) ??
+      (personaDefs.find((x) => x.key === key)
+        ? ({
+            key,
+            title: personaDefs.find((x) => x.key === key)?.title ?? key,
+            theme: personaDefs.find((x) => x.key === key)?.theme ?? null,
+            blurb: personaDefs.find((x) => x.key === key)?.blurb ?? null,
+            image_url: null,
+            category: null,
+          } as PersonaCatalogDefRow)
+        : null);
+    if (!def) return;
+    setPersonaCatalogDetailTabByKey((prev) => ({ ...prev, [key]: ctx.tab }));
+    if (Number.isFinite(Number(ctx.scrollY ?? NaN))) {
+      setPersonaCatalogDetailPendingRestoreY(Math.max(0, Number(ctx.scrollY ?? 0)));
+    }
+    setDetailVisible(false);
+    setDetailOpenSource("");
+    setDetailPersonaMatch(null);
+    setDetailSequenceIds([]);
+    setDetailSequenceIndex(0);
+    setPersonaCatalogDetail(def);
+  }, [personaCatalogDefs, personaCatalogDetailReturnContext, personaDefs]);
+
+  const onPersonaCatalogDetailScroll = useCallback(
+    (y: number) => {
+      const key = String(personaCatalogDetail?.key ?? "").trim();
+      if (!key) return;
+      const tab = personaCatalogDetailTab;
+      const ySafe = Math.max(0, Number(y ?? 0) || 0);
+      personaCatalogDetailScrollYRef.current = ySafe;
+      const storageKey = personaCatalogDetailScrollStorageKey({ key, tab });
+      if (!storageKey) return;
+      personaCatalogDetailScrollByKeyTabRef.current[storageKey] = ySafe;
+    },
+    [personaCatalogDetail?.key, personaCatalogDetailTab]
+  );
+
+  useEffect(() => {
+    if (!personaCatalogDetail || personaCatalogDetailPendingRestoreY == null) return;
+    const targetY = Math.max(0, Number(personaCatalogDetailPendingRestoreY ?? 0) || 0);
+    const timer = setTimeout(() => {
+      try {
+        personaCatalogDetailScrollRef.current?.scrollTo({ y: targetY, animated: false });
+      } catch {}
+      personaCatalogDetailScrollYRef.current = targetY;
+      setPersonaCatalogDetailPendingRestoreY(null);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [
+    personaCatalogDetail,
+    personaCatalogDetailPendingRestoreY,
+    personaCatalogDetailTab,
+    personaCatalogDetailCompatLoading,
+    personaCatalogDetailExamplesLoading,
+  ]);
+
+  useEffect(() => {
+    const key = String(personaCatalogDetail?.key ?? "").trim();
+    const exampleId = String(personaCatalogDetailPendingSnapExampleId ?? "").trim();
+    if (!key || !exampleId) return;
+    if (personaCatalogDetailTab !== "examples") return;
+    if (personaCatalogDetailPendingRestoreY != null) return;
+    if (personaCatalogDetailExamplesLoading) return;
+    const layoutKey = `${key}:${exampleId}`;
+    const targetY = personaCatalogDetailExampleLayoutYRef.current[layoutKey];
+    if (!Number.isFinite(targetY)) return;
+    const timer = setTimeout(() => {
+      try {
+        personaCatalogDetailScrollRef.current?.scrollTo({
+          y: Math.max(0, Number(targetY) - 12),
+          animated: true,
+        });
+      } catch {}
+      setPersonaCatalogDetailPendingSnapExampleId(null);
+    }, 140);
+    return () => clearTimeout(timer);
+  }, [
+    personaCatalogDetail?.key,
+    personaCatalogDetailExamplesLoading,
+    personaCatalogDetailPendingRestoreY,
+    personaCatalogDetailPendingSnapExampleId,
+    personaCatalogDetailTab,
+  ]);
+
+  useEffect(() => {
+    const currentKey = String(personaCatalogDetail?.key ?? "").trim();
+    const ctx = personaCatalogDetailReturnContext;
+    const shouldPulse =
+      Boolean(currentKey) &&
+      personaCatalogDetailTab === "examples" &&
+      Boolean(ctx) &&
+      ctx?.key === currentKey &&
+      ctx?.tab === "examples" &&
+      String(ctx?.examplePostId ?? "").trim().length > 0;
+
+    personaCatalogDetailExampleHighlightPulse.stopAnimation();
+    personaCatalogDetailExampleHighlightPulse.setValue(0);
+    if (!shouldPulse) return;
+
+    const animation = Animated.sequence([
+      Animated.timing(personaCatalogDetailExampleHighlightPulse, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+      Animated.timing(personaCatalogDetailExampleHighlightPulse, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+      Animated.timing(personaCatalogDetailExampleHighlightPulse, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+      Animated.timing(personaCatalogDetailExampleHighlightPulse, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+    ]);
+    animation.start();
+    return () => {
+      animation.stop();
+      personaCatalogDetailExampleHighlightPulse.stopAnimation();
+      personaCatalogDetailExampleHighlightPulse.setValue(0);
+    };
+  }, [
+    personaCatalogDetail?.key,
+    personaCatalogDetailReturnContext,
+    personaCatalogDetailTab,
+    personaCatalogDetailExampleHighlightPulse,
+  ]);
 
   const loadPersonaBuzzCalibration = useCallback(async () => {
     const fallback = {
@@ -5116,8 +5466,7 @@ export default function App() {
         personaFeedActionedRef.current.clear();
         personaFeedSkipSentRef.current.clear();
       }
-      setPersonaFeedLoading(true);
-      setPersonaFeedError(null);
+      personaFeedListActions.start(reset);
 
       try {
         const up = await fetchMobilePersonaFeedTopPersona({ userId });
@@ -5155,7 +5504,17 @@ export default function App() {
           setPersonaFeedBasePersona(null);
           setPersonaFeedUsedPersonas([]);
           setPersonaFeedBuddyPersonas([]);
-          setPersonaFeedItems((prev) => (reset ? items : [...prev, ...items]));
+          if (reset) {
+            personaFeedListActions.replace(items, {
+              hasMore: items.length === PERSONA_FEED_PAGE,
+              offset: offset + PERSONA_FEED_PAGE,
+            });
+          } else {
+            personaFeedListActions.append(items, {
+              hasMore: items.length === PERSONA_FEED_PAGE,
+              offset: offset + PERSONA_FEED_PAGE,
+            });
+          }
           items.forEach((item) => {
             if (!personaFeedSeenAtRef.current.has(item.id)) {
               personaFeedSeenAtRef.current.set(item.id, Date.now());
@@ -5169,8 +5528,6 @@ export default function App() {
               });
             }
           });
-          setPersonaFeedHasMore(items.length === PERSONA_FEED_PAGE);
-          setPersonaFeedOffset(offset + PERSONA_FEED_PAGE);
           return;
         }
 
@@ -5339,7 +5696,17 @@ export default function App() {
               },
             }))
           );
-          setPersonaFeedItems((prev) => (reset ? items : [...prev, ...items]));
+          if (reset) {
+            personaFeedListActions.replace(items, {
+              hasMore: items.length === PERSONA_FEED_PAGE,
+              offset: offset + PERSONA_FEED_PAGE,
+            });
+          } else {
+            personaFeedListActions.append(items, {
+              hasMore: items.length === PERSONA_FEED_PAGE,
+              offset: offset + PERSONA_FEED_PAGE,
+            });
+          }
           items.forEach((item) => {
             if (!personaFeedSeenAtRef.current.has(item.id)) {
               personaFeedSeenAtRef.current.set(item.id, Date.now());
@@ -5353,8 +5720,6 @@ export default function App() {
               });
             }
           });
-          setPersonaFeedHasMore(items.length === PERSONA_FEED_PAGE);
-          setPersonaFeedOffset(offset + PERSONA_FEED_PAGE);
           setPersonaFeedBasePersona(basePersona);
           setPersonaFeedUsedPersonas(personaKeys);
           return;
@@ -5446,7 +5811,11 @@ export default function App() {
 
         const ids = ranked.map((x) => x.post_id);
         if (ids.length === 0) {
-          setPersonaFeedHasMore(false);
+          if (reset) {
+            personaFeedListActions.replace([], { hasMore: false, offset });
+          } else {
+            personaFeedListActions.append([], { hasMore: false, offset });
+          }
           return;
         }
 
@@ -5480,16 +5849,23 @@ export default function App() {
 
         setPersonaFeedBasePersona(basePersona);
         setPersonaFeedUsedPersonas(personaKeys);
-        setPersonaFeedItems((prev) => {
-          const merged = reset ? [] : [...prev];
-          const seen = new Set(merged.map((x) => x.id));
-          items.forEach((x) => {
-            if (!seen.has(x.id)) merged.push(x);
+        if (reset) {
+          personaFeedListActions.replace(items, {
+            hasMore: items.length === PERSONA_FEED_PAGE,
+            offset: offset + PERSONA_FEED_PAGE,
           });
-          return merged;
-        });
-        setPersonaFeedOffset(offset + PERSONA_FEED_PAGE);
-        setPersonaFeedHasMore(items.length === PERSONA_FEED_PAGE);
+        } else {
+          const seen = new Set(personaFeedItemsRef.current.map((x) => x.id));
+          const appendItems = items.filter((x) => {
+            if (!x?.id || seen.has(x.id)) return false;
+            seen.add(x.id);
+            return true;
+          });
+          personaFeedListActions.append(appendItems, {
+            hasMore: items.length === PERSONA_FEED_PAGE,
+            offset: offset + PERSONA_FEED_PAGE,
+          });
+        }
 
         items.forEach((item) => {
           if (!personaFeedSeenAtRef.current.has(item.id)) {
@@ -5505,10 +5881,8 @@ export default function App() {
           }
         });
       } catch (e: any) {
-        setPersonaFeedError(e?.message ?? "キャラ別TLの取得に失敗しました");
+        personaFeedListActions.fail(e?.message ?? "キャラ別TLの取得に失敗しました");
         if (reset) setPersonaFeedBuddyPersonas([]);
-      } finally {
-        setPersonaFeedLoading(false);
       }
     },
     [
@@ -5523,6 +5897,7 @@ export default function App() {
       loadPersonaFeedBuddyModePreference,
       logPersonaFeedBuddyModeAbEvent,
       loadPersonaBuzzCalibration,
+      personaFeedListActions,
       personaFeedLoading,
       personaFeedOffset,
       personaFeedStrategy,
@@ -5694,7 +6069,7 @@ export default function App() {
     setDialogueCompatError(null);
     try {
       let items: PersonaCompatItem[] = [];
-      const webBase = (process.env.EXPO_PUBLIC_WEB_BASE_URL ?? "").trim().replace(/\/$/, "");
+      const webBase = personaApiWebBaseUrl;
       if (webBase) {
         const params = new URLSearchParams({
           key: dialogueSourceKey,
@@ -5747,13 +6122,13 @@ export default function App() {
           : (items[0]?.targetKey ?? "")
       );
     } catch (e: any) {
-      setDialogueCompatError(e?.message ?? "相性データ取得に失敗しました");
+      setDialogueCompatError(formatPersonaApiErrorMessage(e, "相性データ取得に失敗しました"));
       setDialogueCompatItems([]);
       setDialogueTargetKey("");
     } finally {
       setDialogueCompatLoading(false);
     }
-  }, [dialogueMode, dialogueSourceKey, resolvePersonaTitles]);
+  }, [dialogueMode, dialogueSourceKey, personaApiWebBaseUrl, resolvePersonaTitles]);
 
   const loadComposeCompat = useCallback(
     async (sourceKey: string) => {
@@ -5769,7 +6144,7 @@ export default function App() {
       setComposeCompatError(null);
       try {
         let items: PersonaCompatItem[] = [];
-        const webBase = (process.env.EXPO_PUBLIC_WEB_BASE_URL ?? "").trim().replace(/\/$/, "");
+        const webBase = personaApiWebBaseUrl;
         if (webBase) {
           const params = new URLSearchParams({
             key,
@@ -5824,12 +6199,12 @@ export default function App() {
         );
       } catch (e: any) {
         setComposeCompatItems([]);
-        setComposeCompatError(e?.message ?? "相性データ取得に失敗しました");
+        setComposeCompatError(formatPersonaApiErrorMessage(e, "相性データ取得に失敗しました"));
       } finally {
         setComposeCompatLoading(false);
       }
     },
-    [resolvePersonaTitles]
+    [personaApiWebBaseUrl, resolvePersonaTitles]
   );
 
   const generateDialogueDrafts = useCallback(async () => {
@@ -5855,7 +6230,7 @@ export default function App() {
         targetHook: dialogueTargetProfile.hook,
       });
 
-      const base = (process.env.EXPO_PUBLIC_WEB_BASE_URL ?? "").trim().replace(/\/$/, "");
+      const base = personaApiWebBaseUrl;
       if (!base) {
         setDialogueResult(fallback);
         return;
@@ -5885,7 +6260,7 @@ export default function App() {
         tips: (json.tips ?? []).map((x: any) => String(x)).slice(0, 4),
       });
     } catch (e: any) {
-      setDialogueError(e?.message ?? "対話草案の生成に失敗しました");
+      setDialogueError(formatPersonaApiErrorMessage(e, "対話草案の生成に失敗しました"));
       const selectedCompat =
         dialogueCompatItems.find((x) => x.targetKey === dialogueTargetKey) ?? null;
       setDialogueResult(
@@ -5919,6 +6294,7 @@ export default function App() {
     dialogueTargetDef,
     dialogueTargetProfile,
     dialogueTargetKey,
+    personaApiWebBaseUrl,
   ]);
 
   const hydrateOpenedPostState = useCallback(
@@ -6162,9 +6538,9 @@ export default function App() {
         }
 
         await loadDetailSaveState(postId);
-        setSavedFeed((prev) =>
+        savedFeedListActions.replace(
           requestedSaved
-            ? prev.map((x) =>
+            ? savedFeedItemsRef.current.map((x) =>
                 x.id === postId
                   ? {
                       ...x,
@@ -6176,7 +6552,7 @@ export default function App() {
                     }
                   : x
               )
-            : prev.filter((x) => x.id !== postId)
+            : savedFeedItemsRef.current.filter((x) => x.id !== postId)
         );
         if (tab === "saved") {
           void loadSavedFeed(true);
@@ -6196,6 +6572,7 @@ export default function App() {
       loadDetailSaveState,
       loadSavedCollectionsSummary,
       loadSavedFeed,
+      savedFeedListActions,
       tab,
       userId,
     ]
@@ -6378,7 +6755,7 @@ export default function App() {
               collectionLabel: known.collectionLabel ?? "保存",
             },
           }));
-          setSavedFeed((prev) => prev.filter((x) => x.id !== postId));
+          savedFeedListActions.replace(savedFeedItemsRef.current.filter((x) => x.id !== postId));
           if (tab === "saved") {
             void loadSavedFeed(true);
           }
@@ -6415,6 +6792,7 @@ export default function App() {
       savedCollectionKey,
       savedCollections,
       savedCollectionsAvailable,
+      savedFeedListActions,
       tab,
       userId,
     ]
@@ -6468,6 +6846,11 @@ export default function App() {
       truthTrueVotes: 0,
       truthFalseVotes: 0,
     });
+    setDetailLieLearnedContext(null);
+    setDetailLieLearnedAvailable(true);
+    setDetailLieLearnedHistory([]);
+    setDetailLieLearnedHistoryAvailable(true);
+    detailLieLearnedSigRef.current = "";
 
     try {
       let post: PostDetailItem | null = null;
@@ -6576,6 +6959,148 @@ export default function App() {
     }
   }, [filterBlockedDetailItems, isBlockedAuthor, loadDetailSaveState]);
 
+  useEffect(() => {
+    if (!userId || !detailVisible || !detailPost) return;
+    const text = String(detailPost.text ?? detailPost.body ?? "").trim();
+    const attachmentKind = inferAttachmentKindForLieScore(detailPost as any);
+    const attachmentMixKey = inferAttachmentMixKeyForLieScore(detailPost as any);
+    const baseLie = analyzeLieScore({ text });
+    const feedbackInput = {
+      opens: detailLieFeedback.opens,
+      replies: detailReplies.length,
+      reports: detailLieFeedback.reports,
+      truthTrueVotes: detailLieFeedback.truthTrueVotes,
+      truthFalseVotes: detailLieFeedback.truthFalseVotes,
+      context: {
+        timeBucket: inferLieScoreTimeBucket(detailPost.created_at),
+        weekdayBucket: inferLieScoreWeekdayBucket(detailPost.created_at),
+        postFormat: normalizeLieScorePostFormat(extractLieScorePostFormat(detailPost.analysis)),
+        personaKey: String(
+          detailPost.analysis?.persona?.selected ??
+            detailPost.analysis?.persona?.candidates?.[0]?.key ??
+            ""
+        ).trim() || null,
+        attachmentKind,
+        attachmentMixKey,
+        hasAttachment: attachmentKind !== "none",
+        textLengthBucket: inferLieScoreTextLengthBucket(text),
+        ageHours: inferLieScoreAgeHours(detailPost.created_at),
+      },
+    } as const;
+    const provisional = calibrateLieScoreWithFeedback(baseLie, feedbackInput);
+    const weekdayTimeBucket = provisional.feedbackSignals.weekdayTimeBucket;
+    const personaKey = provisional.feedbackSignals.personaKey ?? "global";
+    const contextKey =
+      provisional.feedbackSignals.learnedContextKey ??
+      buildLieScoreLearnedContextKey({
+        weekdayTimeBucket,
+        personaKey,
+        attachmentMixKey,
+      });
+    if (!weekdayTimeBucket || !contextKey) {
+      setDetailLieLearnedContext(null);
+      setDetailLieLearnedHistory([]);
+      setDetailLieLearnedHistoryDaily([]);
+      return;
+    }
+
+    const sig = JSON.stringify({
+      postId: detailPost.id,
+      contextKey,
+      opens: detailLieFeedback.opens,
+      replies: detailReplies.length,
+      reports: detailLieFeedback.reports,
+      truthTrueVotes: detailLieFeedback.truthTrueVotes,
+      truthFalseVotes: detailLieFeedback.truthFalseVotes,
+    });
+    if (detailLieLearnedSigRef.current === sig) return;
+    detailLieLearnedSigRef.current = sig;
+
+    let alive = true;
+    (async () => {
+      try {
+        const [loadedRes, historyRes, historyDailyRes] = await Promise.all([
+          loadMobileLieScoreContextCoefficient({ userId, contextKey }),
+          loadMobileLieScoreContextCoefficientHistory({ userId, contextKey, limit: 14 }),
+          loadMobileLieScoreContextCoefficientHistoryDaily({ userId, contextKey, limit: 45 }),
+        ]);
+        let loaded = loadedRes;
+        if (!alive) return;
+        if (historyRes.available === false) {
+          setDetailLieLearnedHistoryAvailable(false);
+          setDetailLieLearnedHistory([]);
+        } else {
+          setDetailLieLearnedHistoryAvailable(true);
+          setDetailLieLearnedHistory(historyRes.points ?? []);
+        }
+        if (historyDailyRes.available === false) {
+          setDetailLieLearnedHistoryDailyAvailable(false);
+          setDetailLieLearnedHistoryDaily([]);
+        } else {
+          setDetailLieLearnedHistoryDailyAvailable(true);
+          setDetailLieLearnedHistoryDaily(historyDailyRes.points ?? []);
+        }
+        if (loaded.available === false) {
+          setDetailLieLearnedAvailable(false);
+          setDetailLieLearnedContext(null);
+          return;
+        }
+        setDetailLieLearnedAvailable(true);
+
+        const observation = deriveLieScoreLearnedContextObservation(feedbackInput);
+        if (observation) {
+          const up = await upsertMobileLieScoreContextCoefficientObservation({
+            userId,
+            contextKey,
+            weekdayTimeBucket,
+            personaKey,
+            attachmentMixKey,
+            observation,
+          });
+          if (!alive) return;
+          if (up.available === false) {
+            setDetailLieLearnedAvailable(false);
+            setDetailLieLearnedContext(null);
+            return;
+          }
+            if (up.historyPoint) {
+              setDetailLieLearnedHistory((prev) => {
+                const merged = [...prev, up.historyPoint!];
+                return merged.slice(-14);
+              });
+              setDetailLieLearnedHistoryMode("overlay");
+            }
+          loaded = { available: true as const, row: up.row ?? loaded.row ?? null };
+        }
+
+        if (!alive) return;
+        setDetailLieLearnedContext(loaded.row ?? null);
+      } catch {
+        if (!alive) return;
+        setDetailLieLearnedContext(null);
+        setDetailLieLearnedHistory([]);
+        setDetailLieLearnedHistoryDaily([]);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [
+    detailLieFeedback.opens,
+    detailLieFeedback.reports,
+    detailLieFeedback.truthFalseVotes,
+    detailLieFeedback.truthTrueVotes,
+    detailPost,
+    detailReplies.length,
+    detailVisible,
+    userId,
+  ]);
+
+  useEffect(() => {
+    setDetailLieLearnedHistoryMode("overlay");
+  }, [detailPost?.id]);
+
   const moveDetailBy = useCallback(
     async (delta: -1 | 1) => {
       if (detailLoading || detailSequenceIds.length === 0) return;
@@ -6637,6 +7162,7 @@ export default function App() {
           event: "open",
         });
       }
+      setDetailOpenSource(String(options?.source ?? "").trim());
       setDetailVisible(true);
       return true;
     },
@@ -6955,22 +7481,19 @@ export default function App() {
 
   const loadNotifications = useCallback(async () => {
     if (!userId) return;
-    setNotificationsLoading(true);
-    setNotificationsError(null);
+    notificationsListActions.start(true);
 
     try {
       const result = await loadMobileNotifications({ userId, limit: 50 });
       const items = ((result.items ?? []) as NotificationItem[]).filter(
         (n) => !isBlockedAuthor(n.actor_id)
       );
-      setNotifications(items);
+      notificationsListActions.replace(items, { hasMore: false, offset: items.length });
     } catch (e: any) {
-      setNotificationsError(e?.message ?? "通知の取得に失敗しました");
-      setNotifications([]);
-    } finally {
-      setNotificationsLoading(false);
+      notificationsListActions.replace([], { hasMore: false, offset: 0 });
+      notificationsListActions.fail(e?.message ?? "通知の取得に失敗しました");
     }
-  }, [isBlockedAuthor, userId]);
+  }, [isBlockedAuthor, notificationsListActions, userId]);
 
   const maybeShowCreatorGrowthAlert = useCallback(
     (n: NotificationItem) => {
@@ -6999,18 +7522,18 @@ export default function App() {
           .in("id", ids);
         if (error) throw error;
 
-        setNotifications((prev) =>
-          prev.map((n) =>
+        notificationsListActions.replace(
+          notificationsRef.current.map((n) =>
             ids.includes(n.id) ? { ...n, read_at: new Date().toISOString() } : n
           )
         );
       } catch (e: any) {
-        setNotificationsError(e?.message ?? "既読化に失敗しました");
+        notificationsListActions.fail(e?.message ?? "既読化に失敗しました");
       } finally {
         setNotificationsBusy(false);
       }
     },
-    [notificationsBusy, userId]
+    [notificationsBusy, notificationsListActions, userId]
   );
 
   const renderNotificationCard = useCallback(
@@ -7715,18 +8238,12 @@ export default function App() {
       setFeedError(null);
       setFollowingFeed([]);
       setFollowingError(null);
-      setSavedFeed([]);
-      setSavedFeedLoading(false);
-      setSavedFeedError(null);
-      setSavedFeedOffset(0);
-      setSavedFeedHasMore(true);
+      savedFeedListActions.reset({ hasMore: true, offset: 0 });
       setSavedCollections([]);
       setSavedCollectionKey("all");
       setSavedCollectionsAvailable(true);
-      setPersonaFeedItems([]);
-      setPersonaFeedError(null);
-      setPersonaFeedOffset(0);
-      setPersonaFeedHasMore(true);
+      notificationsListActions.reset({ hasMore: false, offset: 0 });
+      personaFeedListActions.reset({ hasMore: true, offset: 0 });
       setPersonaFeedBasePersona(null);
       setPersonaFeedUsedPersonas([]);
       setPersonaFeedBuddyLearningMode(DEFAULT_BUDDY_LEARNING_MODE);
@@ -7772,8 +8289,6 @@ export default function App() {
       setAccountCreatedAt(null);
       setSearchItems([]);
       setSearchError(null);
-      setNotifications([]);
-      setNotificationsError(null);
       setNotificationFilter("all");
       setPushSetupBusy(false);
       setPushSetupMessage(null);
@@ -7961,9 +8476,7 @@ export default function App() {
   useEffect(() => {
     if (!userId) return;
     flushPersonaFeedSkips();
-    setPersonaFeedOffset(0);
-    setPersonaFeedItems([]);
-    setPersonaFeedHasMore(true);
+    personaFeedListActions.reset();
     setPersonaFeedBuddyPersonas([]);
     personaFeedSeenAtRef.current.clear();
     personaFeedActionedRef.current.clear();
@@ -7972,7 +8485,7 @@ export default function App() {
       void loadPersonaFeed(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [personaFeedStrategy, tab, userId]);
+  }, [flushPersonaFeedSkips, loadPersonaFeed, personaFeedListActions, personaFeedStrategy, tab, userId]);
 
   useEffect(() => {
     return () => {
@@ -8110,10 +8623,12 @@ export default function App() {
   useEffect(() => {
     setFeed((prev) => filterBlockedFeedItems(prev));
     setFollowingFeed((prev) => filterBlockedFeedItems(prev));
-    setPersonaFeedItems((prev) => filterBlockedFeedItems(prev));
+    personaFeedListActions.replace(filterBlockedFeedItems(personaFeedItemsRef.current));
     setSearchItems((prev) => filterBlockedSearchItems(prev));
     setDetailReplies((prev) => filterBlockedDetailItems(prev));
-    setNotifications((prev) => prev.filter((n) => !isBlockedAuthor(n.actor_id)));
+    notificationsListActions.replace(
+      notificationsRef.current.filter((n) => !isBlockedAuthor(n.actor_id))
+    );
     setDetailPost((prev) =>
       prev && isBlockedAuthor(prev.author) ? null : prev
     );
@@ -8122,6 +8637,8 @@ export default function App() {
     filterBlockedFeedItems,
     filterBlockedSearchItems,
     isBlockedAuthor,
+    notificationsListActions,
+    personaFeedListActions,
   ]);
 
   useEffect(() => {
@@ -8137,18 +8654,20 @@ export default function App() {
           if (eventType === "INSERT" && payload?.new) {
             const next = payload.new as NotificationItem;
             if (!isBlockedAuthor(next.actor_id)) {
-              setNotifications((prev) => {
+              notificationsListActions.replace(((prev) => {
                 const merged = [next, ...prev.filter((x) => x.id !== next.id)];
                 return merged.slice(0, 80);
-              });
+              })(notificationsRef.current));
               maybeShowCreatorGrowthAlert(next);
             }
           } else if (eventType === "UPDATE" && payload?.new) {
             const next = payload.new as NotificationItem;
-            setNotifications((prev) => prev.map((x) => (x.id === next.id ? { ...x, ...next } : x)));
+            notificationsListActions.replace(
+              notificationsRef.current.map((x) => (x.id === next.id ? { ...x, ...next } : x))
+            );
           } else if (eventType === "DELETE" && payload?.old?.id) {
             const id = String(payload.old.id);
-            setNotifications((prev) => prev.filter((x) => x.id !== id));
+            notificationsListActions.replace(notificationsRef.current.filter((x) => x.id !== id));
           }
           if (tab === "notifications") {
             void loadNotifications();
@@ -8160,7 +8679,7 @@ export default function App() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [isBlockedAuthor, loadNotifications, maybeShowCreatorGrowthAlert, tab, userId]);
+  }, [isBlockedAuthor, loadNotifications, maybeShowCreatorGrowthAlert, notificationsListActions, tab, userId]);
 
   const applyAuthUserSummary = useCallback((user: any | null | undefined) => {
     setAccountEmail(String(user?.email ?? ""));
@@ -8794,9 +9313,13 @@ export default function App() {
       if (!blockedUserId) return;
       setFeed((prev) => prev.filter((x) => String(x.author ?? "") !== blockedUserId));
       setFollowingFeed((prev) => prev.filter((x) => String(x.author ?? "") !== blockedUserId));
-      setPersonaFeedItems((prev) => prev.filter((x) => String(x.author ?? "") !== blockedUserId));
+      personaFeedListActions.replace(
+        personaFeedItemsRef.current.filter((x) => String(x.author ?? "") !== blockedUserId)
+      );
       setSearchItems((prev) => prev.filter((x) => String(x.author ?? "") !== blockedUserId));
-      setNotifications((prev) => prev.filter((x) => String(x.actor_id ?? "") !== blockedUserId));
+      notificationsListActions.replace(
+        notificationsRef.current.filter((x) => String(x.actor_id ?? "") !== blockedUserId)
+      );
       setDetailReplies((prev) => prev.filter((x) => String(x.author ?? "") !== blockedUserId));
       setDetailPost((prev) =>
         prev && String(prev.author ?? "") === blockedUserId ? null : prev
@@ -8806,7 +9329,7 @@ export default function App() {
         setDetailPersonaMatch(null);
       }
     },
-    [detailPost]
+    [detailPost, notificationsListActions, personaFeedListActions]
   );
 
   const reportPost = useCallback(
@@ -9050,13 +9573,28 @@ export default function App() {
 	      const authorLabels = resolveSocialIdentityLabels(authorIdentity);
 	      const authorPrimaryLabel = authorLabels.primary;
 	      const authorSecondaryLabel = authorLabels.secondary;
-	      const content =
-	        "body" in item
-	          ? ((item.text ?? item.body ?? "") as string)
+      const content =
+        "body" in item
+          ? ((item.text ?? item.body ?? "") as string)
           : ((item.text ?? "") as string);
+      const attachmentKind = inferAttachmentKindForLieScore(item as any);
       const lieAnalysis = analyzeLieScore({ text: content });
       const calibratedLie = calibrateLieScoreWithFeedback(lieAnalysis, {
         replies: Math.max(0, Math.floor(Number((item as any).reply_count ?? 0) || 0)),
+        context: {
+          timeBucket: inferLieScoreTimeBucket(item.created_at),
+          weekdayBucket: inferLieScoreWeekdayBucket(item.created_at),
+          postFormat: normalizeLieScorePostFormat(extractLieScorePostFormat((item as any).analysis)),
+          personaKey: String(
+            (item as any)?.analysis?.persona?.selected ??
+              (item as any)?.analysis?.persona?.candidates?.[0]?.key ??
+              ""
+          ).trim() || null,
+          attachmentKind,
+          hasAttachment: attachmentKind !== "none",
+          textLengthBucket: inferLieScoreTextLengthBucket(content),
+          ageHours: inferLieScoreAgeHours(item.created_at),
+        },
       });
       const percent = Math.round(calibratedLie.score * 100);
       const lieLevelLabel =
@@ -9408,6 +9946,7 @@ export default function App() {
       safeSetStatus(`${label}: 詳細クローズ要求`);
       if (!cancelled) {
         setDetailVisible(false);
+        setDetailOpenSource("");
         setDetailPersonaMatch(null);
         setDetailSequenceIds([]);
         setDetailSequenceIndex(0);
@@ -9779,6 +10318,121 @@ export default function App() {
     </Modal>
   );
 
+  const renderTimelineWeightsChartModal = () => {
+    if (!timelineWeightsChartVisible) return null;
+    const points = timelineSignalWeightsHistory.slice(-24);
+    const bars = buildTimelineWeightTrendRatios(points, 24);
+    const latest = points[points.length - 1] ?? null;
+    return (
+      <Modal visible animationType="slide" onRequestClose={() => setTimelineWeightsChartVisible(false)}>
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.screenTitle}>{timelineLearningSectionSummary.title}</Text>
+            <Pressable style={styles.outlineButton} onPress={() => setTimelineWeightsChartVisible(false)}>
+              <Text style={styles.outlineButtonText}>閉じる</Text>
+            </Pressable>
+          </View>
+          <ScrollView
+            ref={personaCatalogDetailScrollRef}
+            contentContainerStyle={styles.feedList}
+            scrollEventThrottle={16}
+            onScroll={(e) => onPersonaCatalogDetailScroll(Number(e?.nativeEvent?.contentOffset?.y ?? 0))}
+          >
+            <View style={styles.personaCard}>
+              <Text style={styles.sectionTitle}>
+                {timelineLearningSectionSummary.stageLabel} / {timelineLearningSectionSummary.title}
+              </Text>
+              <Text style={styles.subtle}>{timelineLearningSectionSummary.stageDescription}</Text>
+              {timelineLearningActionTips.length > 0 ? (
+                <View style={{ gap: 4 }}>
+                  <Text style={styles.postMeta}>おすすめを育てるコツ</Text>
+                  {timelineLearningActionTips.map((tip) => (
+                    <Text key={`timeline-modal-tip-${tip.key}`} style={styles.subtle}>
+                      ・{tip.label}: {tip.detail}
+                    </Text>
+                  ))}
+                </View>
+              ) : null}
+              <View style={styles.chipWrap}>
+                {timelineLearningSectionSummary.metrics.map((m) => (
+                  <Text key={`timeline-learning-metric-${m.key}`} style={styles.matchChip}>
+                    {m.label} {m.value}
+                  </Text>
+                ))}
+              </View>
+              {!timelineSignalWeightsAvailable ? (
+                <Text style={styles.subtle}>{timelineLearningSectionSummary.unavailableHint}</Text>
+              ) : bars.length < 2 ? (
+                <Text style={styles.subtle}>{timelineLearningSectionSummary.historyEmptyHint}</Text>
+              ) : (
+                <View
+                  style={{
+                    marginTop: 8,
+                    borderWidth: 1,
+                    borderColor: "#E2E8F0",
+                    borderRadius: 12,
+                    backgroundColor: "#F8FAFC",
+                    paddingHorizontal: 10,
+                    paddingVertical: 10,
+                    gap: 8,
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 4, height: 72 }}>
+                    {bars.map((v, idx) => (
+                      <View
+                        key={`timeline-weight-bar-detail-${idx}`}
+                        style={{
+                          flex: 1,
+                          minWidth: 6,
+                          borderRadius: 4,
+                          backgroundColor: idx === bars.length - 1 ? "#1D4ED8" : "#93C5FD",
+                          height: Math.max(10, Math.round(v * 72)),
+                        }}
+                      />
+                    ))}
+                  </View>
+                  <Text style={styles.subtle}>
+                    {timelineLearningSectionSummary.chartCaption}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {timelineSignalWeights ? (
+              <View style={styles.personaCard}>
+                <Text style={styles.sectionTitle}>{timelineLearningSectionSummary.currentWeightsTitle}</Text>
+                {[
+                  ["保存ブースト", timelineSignalWeights.savedPostBoost],
+                  ["フォローブースト", timelineSignalWeights.followedAuthorBoost],
+                  ["開封済み抑制", timelineSignalWeights.openedPenalty],
+                  ["興味作者", timelineSignalWeights.interestedAuthorBoost],
+                  ["興味キャラ", timelineSignalWeights.interestedPersonaBoost],
+                ].map(([label, value]) => (
+                  <View key={`weight-row-${label}`} style={styles.postMetaRow}>
+                    <Text style={styles.postMeta}>{label}</Text>
+                    <Text style={styles.badge}>{Math.round(Number(value) * 100)}pt</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
+            {latest ? (
+              <View style={styles.personaCard}>
+                <Text style={styles.sectionTitle}>{timelineLearningSectionSummary.recentUpdatesTitle}</Text>
+                <Text style={styles.postMeta}>
+                  {formatDateTime(latest.at)} / samples {latest.samples}
+                </Text>
+                <Text style={styles.subtle}>
+                  開封 {latest.openedCount ?? 0} / 保存 {latest.savedCount ?? 0} / フォロー {latest.followedCount ?? 0}
+                </Text>
+              </View>
+            ) : null}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+    );
+  };
+
   const renderFormatRail = useCallback(
     (items: FormatRailItem[], source: string) => {
       if (!items.length) return null;
@@ -9906,14 +10560,97 @@ export default function App() {
                     node: (
                       <View style={styles.personaCard}>
                         <View style={styles.postMetaRow}>
-                          <Text style={styles.sectionTitle}>見つけやすく表示</Text>
+                          <Text style={styles.sectionTitle}>{timelineLearningSectionSummary.title}</Text>
                           <Text style={styles.postMeta}>
                             人気 {timelineHighlights.popular.length} / あなた向け {timelineHighlights.forYou.length}
                           </Text>
                         </View>
                         <Text style={styles.subtle}>
-                          反応されやすい投稿と、あなたが開きやすい傾向の投稿を先にまとめています。
+                          {timelineLearningSectionSummary.stageDescription}
                         </Text>
+                        {timelineLearningActionTips.length > 0 ? (
+                          <View
+                            style={{
+                              borderWidth: 1,
+                              borderColor: "#BFDBFE",
+                              borderRadius: 10,
+                              backgroundColor: "#EFF6FF",
+                              paddingHorizontal: 10,
+                              paddingVertical: 8,
+                              gap: 4,
+                            }}
+                          >
+                            <Text style={[styles.postMeta, { color: "#1E3A8A" }]}>おすすめを育てるコツ</Text>
+                            {timelineLearningActionTips.map((tip) => (
+                              <Text key={`tl-tip-${tip.key}`} style={[styles.postMeta, { color: "#1D4ED8" }]}>
+                                ・{tip.label}: {tip.detail}
+                              </Text>
+                            ))}
+                          </View>
+                        ) : null}
+                        {timelineSignalWeightsSamples > 0 ? (
+                          <View style={{ gap: 6 }}>
+                            <View style={styles.postMetaRow}>
+                              <Text style={styles.postMeta}>
+                                {timelineLearningSectionSummary.stageLabel} / 更新 {timelineSignalWeightsSamples}
+                                回（フォロー/保存/開封を反映）
+                              </Text>
+                              <Pressable
+                                style={styles.outlineButton}
+                                onPress={() => setTimelineWeightsChartVisible(true)}
+                              >
+                                <Text style={styles.outlineButtonText}>{timelineLearningSectionSummary.title}</Text>
+                              </Pressable>
+                            </View>
+                            {timelineWeightTrendHeights.length > 1 ? (
+                              <View
+                                style={{
+                                  borderWidth: 1,
+                                  borderColor: "#E2E8F0",
+                                  borderRadius: 10,
+                                  backgroundColor: "#F8FAFC",
+                                  paddingHorizontal: 8,
+                                  paddingVertical: 8,
+                                  gap: 6,
+                                }}
+                              >
+                                <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 4, height: 34 }}>
+                                  {timelineWeightTrendHeights.map((v, idx) => (
+                                    <View
+                                      key={`tl-weight-mini-${idx}`}
+                                      style={{
+                                        flex: 1,
+                                        minWidth: 6,
+                                        borderRadius: 4,
+                                        backgroundColor: idx === timelineWeightTrendHeights.length - 1 ? "#2563EB" : "#7DD3FC",
+                                        height: Math.max(8, Math.round(v * 34)),
+                                      }}
+                                    />
+                                  ))}
+                                </View>
+                                {timelineWeightTrendSummary ? (
+                                  <Text style={styles.subtle}>
+                                    重み推移 保存{" "}
+                                    {formatTimelineWeightPointLabel(timelineWeightTrendSummary.saved, {
+                                      signed: true,
+                                      suffix: "pt",
+                                    })}{" "}
+                                    / フォロー{" "}
+                                    {formatTimelineWeightPointLabel(timelineWeightTrendSummary.followed, {
+                                      signed: true,
+                                      suffix: "pt",
+                                    })}{" "}
+                                    / 開封抑制{" "}
+                                    {formatTimelineWeightPointLabel(timelineWeightTrendSummary.openedPenalty, {
+                                      signed: true,
+                                      suffix: "pt",
+                                    })}
+                                  </Text>
+                                ) : null}
+                              </View>
+                            ) : null}
+                          </View>
+                        ) : null}
 
                         {timelineHighlights.popular.length > 0 ? (
                           <View style={{ gap: 6 }}>
@@ -10748,14 +11485,63 @@ export default function App() {
       ) : null}
 
       {personaFeedLoading && personaFeedItems.length === 0 ? (
-        <View style={styles.centerBox}>
-          <ActivityIndicator />
-          <Text style={styles.subtle}>読み込み中…</Text>
+        <View style={styles.personaCard}>
+          <View style={styles.centerBox}>
+            <ActivityIndicator />
+            <Text style={styles.sectionTitle}>キャラ別TLを準備中…</Text>
+            <Text style={styles.subtle}>
+              {personaFeedStrategy === "compat"
+                ? "相性キャラ・学習結果・反応予測をまとめて計算しています。"
+                : "同キャラ優先で投稿を集めています。"}
+            </Text>
+            <Text style={styles.subtle}>
+              {personaFeedListState.initialized ? "更新中" : "初回読み込み"} / base{" "}
+              {personaFeedBasePersona ? `@${personaFeedBasePersona}` : "未確定"}
+            </Text>
+          </View>
         </View>
       ) : personaFeedError ? (
-        <Text style={styles.errorText}>{personaFeedError}</Text>
+        <View style={styles.personaCard}>
+          <Text style={styles.sectionTitle}>キャラ別TLの取得に失敗しました</Text>
+          <Text style={styles.errorText}>{personaFeedError}</Text>
+          <Text style={styles.subtle}>
+            戦略: {personaFeedStrategy === "compat" ? "相性優先" : "同キャラ優先"} / base{" "}
+            {personaFeedBasePersona ? `@${personaFeedBasePersona}` : "未確定"}
+          </Text>
+          <View style={styles.headerActions}>
+            <Pressable style={styles.outlineButton} onPress={() => void loadPersonaFeed(true)}>
+              <Text style={styles.outlineButtonText}>再試行</Text>
+            </Pressable>
+            <Pressable
+              style={styles.outlineButton}
+              onPress={() => {
+                setPersonaFeedStrategy((prev) => (prev === "compat" ? "same" : "compat"));
+              }}
+            >
+              <Text style={styles.outlineButtonText}>戦略を切替</Text>
+            </Pressable>
+          </View>
+        </View>
       ) : personaFeedItems.length === 0 ? (
-        <Text style={styles.subtle}>表示できる投稿がありません。</Text>
+        <View style={styles.personaCard}>
+          <Text style={styles.sectionTitle}>表示できる投稿がありません</Text>
+          <Text style={styles.subtle}>
+            フィルタ条件・相性候補・ブロック設定の影響で0件の可能性があります。
+          </Text>
+          <View style={styles.headerActions}>
+            <Pressable style={styles.outlineButton} onPress={() => void loadPersonaFeed(true)}>
+              <Text style={styles.outlineButtonText}>更新</Text>
+            </Pressable>
+            <Pressable
+              style={styles.outlineButton}
+              onPress={() => setPersonaFeedStrategy((prev) => (prev === "compat" ? "same" : "compat"))}
+            >
+              <Text style={styles.outlineButtonText}>
+                {personaFeedStrategy === "compat" ? "同キャラ優先へ" : "相性優先へ"}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
       ) : (
         renderVirtualRowsList({
           listKey: `persona-feed-${personaFeedStrategy}-${personaFeedBasePersona ?? "none"}`,
@@ -10822,7 +11608,9 @@ export default function App() {
                           <Pressable
                             style={styles.outlineButton}
                             onPress={() => {
-                              setPersonaFeedItems((prev) => prev.filter((x) => x.id !== item.id));
+                              personaFeedListActions.replace(
+                                personaFeedItemsRef.current.filter((x) => x.id !== item.id)
+                              );
                               void logPersonaFeedFeedback({
                                 postId: item.id,
                                 personaKey: item.persona_match?.key ?? null,
@@ -10888,7 +11676,9 @@ export default function App() {
                           <Pressable
                             style={styles.outlineButton}
                             onPress={() => {
-                              setPersonaFeedItems((prev) => prev.filter((x) => x.id !== item.id));
+                              personaFeedListActions.replace(
+                                personaFeedItemsRef.current.filter((x) => x.id !== item.id)
+                              );
                               void logPersonaFeedFeedback({
                                 postId: item.id,
                                 personaKey: item.persona_match?.key ?? null,
@@ -11007,6 +11797,26 @@ export default function App() {
         </Pressable>
       </View>
 
+      {personaCatalogDetailReturnContext ? (
+        <View style={styles.personaCard}>
+          <View style={styles.postMetaRow}>
+            <Text style={styles.sectionTitle}>キャラ図鑑から編集中</Text>
+            <Text style={styles.postMeta}>@{personaCatalogDetailReturnContext.key}</Text>
+          </View>
+          <View style={styles.headerActions}>
+            <Pressable style={styles.outlineButton} onPress={reopenPersonaCatalogDetailFromContext}>
+              <Text style={styles.outlineButtonText}>キャラ詳細に戻る</Text>
+            </Pressable>
+            <Pressable
+              style={styles.outlineButton}
+              onPress={() => setPersonaCatalogDetailReturnContext(null)}
+            >
+              <Text style={styles.outlineButtonText}>導線を閉じる</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
+
       <View style={styles.headerActions}>
         <Pressable
           style={[
@@ -11048,7 +11858,14 @@ export default function App() {
       {dialogueCompatLoading ? (
         <Text style={styles.subtle}>相性候補を計算中…</Text>
       ) : dialogueCompatError ? (
-        <Text style={styles.errorText}>{dialogueCompatError}</Text>
+        <View style={{ gap: 6 }}>
+          <Text style={styles.errorText}>{dialogueCompatError}</Text>
+          <View style={styles.headerActions}>
+            <Pressable style={styles.outlineButton} onPress={() => void loadDialogueCompat()}>
+              <Text style={styles.outlineButtonText}>相性候補を再試行</Text>
+            </Pressable>
+          </View>
+        </View>
       ) : dialogueCompatItems.length === 0 ? (
         <Text style={styles.subtle}>相性候補がありません。</Text>
       ) : (
@@ -11136,7 +11953,16 @@ export default function App() {
         </View>
       </ScrollView>
 
-      {dialogueError ? <Text style={styles.errorText}>{dialogueError}</Text> : null}
+      {dialogueError ? (
+        <View style={{ gap: 6 }}>
+          <Text style={styles.errorText}>{dialogueError}</Text>
+          <View style={styles.headerActions}>
+            <Pressable style={styles.outlineButton} onPress={() => void generateDialogueDrafts()}>
+              <Text style={styles.outlineButtonText}>草案生成を再試行</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
 
       {dialogueResult ? (
         <ScrollView contentContainerStyle={styles.feedList}>
@@ -11171,6 +11997,26 @@ export default function App() {
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.feedList}>
         <Text style={styles.screenTitle}>投稿</Text>
+
+        {personaCatalogDetailReturnContext ? (
+          <View style={styles.personaCard}>
+            <View style={styles.postMetaRow}>
+              <Text style={styles.sectionTitle}>キャラ図鑑から投稿作成中</Text>
+              <Text style={styles.postMeta}>@{personaCatalogDetailReturnContext.key}</Text>
+            </View>
+            <View style={styles.headerActions}>
+              <Pressable style={styles.outlineButton} onPress={reopenPersonaCatalogDetailFromContext}>
+                <Text style={styles.outlineButtonText}>キャラ詳細に戻る</Text>
+              </Pressable>
+              <Pressable
+                style={styles.outlineButton}
+                onPress={() => setPersonaCatalogDetailReturnContext(null)}
+              >
+                <Text style={styles.outlineButtonText}>導線を閉じる</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
 
         {composeLastPostedResult ? (
           <View style={styles.personaCard}>
@@ -11396,7 +12242,21 @@ export default function App() {
               </Text>
             </>
           )}
-          {composeCompatError ? <Text style={styles.errorText}>{composeCompatError}</Text> : null}
+          {composeCompatError ? (
+            <View style={{ gap: 6 }}>
+              <Text style={styles.errorText}>{composeCompatError}</Text>
+              {composePersonaSelected ? (
+                <View style={styles.headerActions}>
+                  <Pressable
+                    style={styles.outlineButton}
+                    onPress={() => void loadComposeCompat(composePersonaSelected)}
+                  >
+                    <Text style={styles.outlineButtonText}>相性提案を再試行</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
         </View>
         <View style={styles.personaCard}>
           <View style={styles.screenHeader}>
@@ -11711,6 +12571,14 @@ export default function App() {
               >
                 <Text style={styles.outlineButtonText}>キャラ別TLへ</Text>
               </Pressable>
+              <Pressable
+                style={styles.outlineButton}
+                onPress={() => {
+                  setTimelineWeightsChartVisible(true);
+                }}
+              >
+                <Text style={styles.outlineButtonText}>{timelineLearningSectionSummary.title}</Text>
+              </Pressable>
             </View>
             <View style={styles.headerActions}>
               <Pressable
@@ -11728,6 +12596,102 @@ export default function App() {
                 }}
               >
                 <Text style={styles.outlineButtonText}>主要データ再読込</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <View style={styles.personaCard}>
+            <View style={styles.postMetaRow}>
+              <Text style={styles.sectionTitle}>{timelineLearningSectionSummary.title}</Text>
+              <Text style={styles.postMeta}>{timelineLearningSectionSummary.stageLabel}</Text>
+            </View>
+            <Text style={styles.subtle}>{timelineLearningSectionSummary.stageDescription}</Text>
+            {timelineLearningActionTips.length > 0 ? (
+              <View style={{ gap: 4 }}>
+                <Text style={styles.postMeta}>おすすめを育てるコツ</Text>
+                {timelineLearningActionTips.map((tip) => (
+                  <Text key={`profile-tl-tip-${tip.key}`} style={styles.subtle}>
+                    ・{tip.label}: {tip.detail}
+                  </Text>
+                ))}
+              </View>
+            ) : null}
+            <View style={styles.chipWrap}>
+              {timelineLearningSectionSummary.metrics.map((m) => (
+                <Text key={`profile-tl-learning-${m.key}`} style={styles.matchChip}>
+                  {m.label} {m.value}
+                </Text>
+              ))}
+            </View>
+            {!timelineSignalWeightsAvailable ? (
+              <Text style={styles.errorText}>{timelineLearningSectionSummary.unavailableHint}</Text>
+            ) : timelineWeightTrendHeights.length > 1 ? (
+              <View
+                style={{
+                  borderWidth: 1,
+                  borderColor: "#E2E8F0",
+                  borderRadius: 10,
+                  backgroundColor: "#F8FAFC",
+                  paddingHorizontal: 8,
+                  paddingVertical: 8,
+                  gap: 6,
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 4, height: 34 }}>
+                  {timelineWeightTrendHeights.map((v: number, idx: number) => (
+                    <View
+                      key={`profile-tl-learning-bar-${idx}`}
+                      style={{
+                        flex: 1,
+                        minWidth: 6,
+                        borderRadius: 4,
+                        backgroundColor:
+                          idx === timelineWeightTrendHeights.length - 1 ? "#2563EB" : "#7DD3FC",
+                        height: Math.max(8, Math.round(v * 34)),
+                      }}
+                    />
+                  ))}
+                </View>
+                <Text style={styles.subtle}>{timelineLearningSectionSummary.chartCaption}</Text>
+                {timelineWeightTrendSummary ? (
+                  <Text style={styles.subtle}>
+                    重み推移 保存{" "}
+                    {formatTimelineWeightPointLabel(timelineWeightTrendSummary.saved, {
+                      signed: true,
+                      suffix: "pt",
+                    })}{" "}
+                    / フォロー{" "}
+                    {formatTimelineWeightPointLabel(timelineWeightTrendSummary.followed, {
+                      signed: true,
+                      suffix: "pt",
+                    })}{" "}
+                    / 開封抑制{" "}
+                    {formatTimelineWeightPointLabel(timelineWeightTrendSummary.openedPenalty, {
+                      signed: true,
+                      suffix: "pt",
+                    })}
+                  </Text>
+                ) : null}
+              </View>
+            ) : (
+              <Text style={styles.subtle}>{timelineLearningSectionSummary.historyEmptyHint}</Text>
+            )}
+            <View style={styles.headerActions}>
+              <Pressable
+                style={styles.outlineButton}
+                onPress={() => {
+                  setTimelineWeightsChartVisible(true);
+                }}
+              >
+                <Text style={styles.outlineButtonText}>{timelineLearningSectionSummary.title}</Text>
+              </Pressable>
+              <Pressable
+                style={styles.outlineButton}
+                onPress={() => {
+                  setTab("timeline");
+                }}
+              >
+                <Text style={styles.outlineButtonText}>TLへ戻る</Text>
               </Pressable>
             </View>
           </View>
@@ -12386,6 +13350,24 @@ export default function App() {
     const imageIdx = Math.max(0, Number(personaCatalogImageErrors[detail.key] ?? 0) || 0);
     const imageUrl = candidates[imageIdx] ?? null;
     const sourceDef = personaDefs.find((x) => x.key === detail.key) ?? null;
+    const detailProfile = buildPersonaProfile({
+      key: detail.key,
+      title: sourceDef?.title ?? detail.title ?? detail.key,
+      theme: sourceDef?.theme ?? detail.theme ?? null,
+      blurb: sourceDef?.blurb ?? detail.blurb ?? null,
+      talkStyle: sourceDef?.talk_style ?? null,
+      relationStyle: sourceDef?.relation_style ?? null,
+      vibeTags: sourceDef?.vibe_tags ?? [],
+    });
+    const detailPostingGuide = buildPersonaPostingGuide({
+      key: detail.key,
+      title: sourceDef?.title ?? detail.title ?? detail.key,
+      theme: sourceDef?.theme ?? detail.theme ?? null,
+      blurb: sourceDef?.blurb ?? detail.blurb ?? null,
+      talkStyle: sourceDef?.talk_style ?? null,
+      relationStyle: sourceDef?.relation_style ?? null,
+      vibeTags: sourceDef?.vibe_tags ?? [],
+    });
     const selectedCompat =
       personaCatalogDetailCompatItems.find((x) => x.targetKey === personaCatalogDetailDialogueTargetKey) ?? null;
     const targetDef =
@@ -12404,15 +13386,7 @@ export default function App() {
             replyToText: "",
             sourceTalk: sourceDef?.talk_style ?? null,
             targetTalk: (targetDef as any)?.talk_style ?? null,
-            sourceProfileSummary: buildPersonaProfile({
-              key: detail.key,
-              title: sourceDef?.title ?? detail.title ?? detail.key,
-              theme: sourceDef?.theme ?? detail.theme ?? null,
-              blurb: sourceDef?.blurb ?? detail.blurb ?? null,
-              talkStyle: sourceDef?.talk_style ?? null,
-              relationStyle: sourceDef?.relation_style ?? null,
-              vibeTags: sourceDef?.vibe_tags ?? [],
-            }).summary,
+            sourceProfileSummary: detailProfile.summary,
             targetProfileSummary: buildPersonaProfile({
               key: personaCatalogDetailDialogueTargetKey,
               title:
@@ -12425,15 +13399,7 @@ export default function App() {
               relationStyle: (targetDef as any)?.relation_style ?? null,
               vibeTags: (targetDef as any)?.vibe_tags ?? [],
             }).summary,
-            sourceHook: buildPersonaProfile({
-              key: detail.key,
-              title: sourceDef?.title ?? detail.title ?? detail.key,
-              theme: sourceDef?.theme ?? detail.theme ?? null,
-              blurb: sourceDef?.blurb ?? detail.blurb ?? null,
-              talkStyle: sourceDef?.talk_style ?? null,
-              relationStyle: sourceDef?.relation_style ?? null,
-              vibeTags: sourceDef?.vibe_tags ?? [],
-            }).hook,
+            sourceHook: detailProfile.hook,
             targetHook: buildPersonaProfile({
               key: personaCatalogDetailDialogueTargetKey,
               title:
@@ -12448,6 +13414,20 @@ export default function App() {
             }).hook,
           })
         : null;
+    const highlightedExamplePostId =
+      personaCatalogDetailReturnContext &&
+      personaCatalogDetailReturnContext.key === detail.key &&
+      personaCatalogDetailReturnContext.tab === "examples"
+        ? String(personaCatalogDetailReturnContext.examplePostId ?? "").trim() || null
+        : null;
+    const exampleHighlightScale = personaCatalogDetailExampleHighlightPulse.interpolate({
+      inputRange: [0, 1],
+      outputRange: [1, 1.025],
+    });
+    const exampleHighlightOverlayOpacity = personaCatalogDetailExampleHighlightPulse.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0.22, 0.72],
+    });
 
     return (
       <Modal
@@ -12492,11 +13472,57 @@ export default function App() {
             </View>
 
             <View style={styles.personaCard}>
+              <Text style={styles.sectionTitle}>キャラ運用ガイド</Text>
+              <Text style={styles.subtle}>{detailPostingGuide.summary}</Text>
+              <View style={styles.chipWrap}>
+                {detailPostingGuide.recommendedFormats.map((f) => (
+                  <Text key={`persona-guide-format-${detail.key}-${f.key}`} style={styles.matchChip}>
+                    {f.label}
+                  </Text>
+                ))}
+                {detailPostingGuide.recommendedTimeBuckets.map((t) => (
+                  <Text
+                    key={`persona-guide-time-${detail.key}-${t.key}`}
+                    style={[styles.matchChip, { backgroundColor: "#ECFEFF", color: "#0F766E" }]}
+                  >
+                    {t.label}
+                  </Text>
+                ))}
+              </View>
+              {detailPostingGuide.recommendedFormats.slice(0, 2).map((f) => (
+                <Text key={`persona-guide-format-reason-${detail.key}-${f.key}`} style={styles.postMeta}>
+                  ・{f.label}: {f.reason}
+                </Text>
+              ))}
+              {detailPostingGuide.recommendedTimeBuckets.slice(0, 2).map((t) => (
+                <Text key={`persona-guide-time-reason-${detail.key}-${t.key}`} style={styles.postMeta}>
+                  ・{t.label}: {t.reason}
+                </Text>
+              ))}
+              <Text style={styles.postMeta}>相性の使い方: {detailPostingGuide.buddyStrategy}</Text>
+              {detailPostingGuide.attachmentHints.slice(0, 2).map((hint) => (
+                <Text key={`persona-guide-attachment-${detail.key}-${hint}`} style={styles.postMeta}>
+                  ・添付ヒント: {hint}
+                </Text>
+              ))}
+              {detailPostingGuide.hookExamples.slice(0, 2).map((hook) => (
+                <Text key={`persona-guide-hook-${detail.key}-${hook}`} style={styles.subtle}>
+                  書き出し例: {hook}
+                </Text>
+              ))}
+            </View>
+
+            <View style={styles.personaCard}>
               <Text style={styles.sectionTitle}>このキャラで使う</Text>
               <View style={styles.headerActions}>
                 <Pressable
                   style={styles.outlineButton}
                   onPress={() => {
+                    setPersonaCatalogDetailReturnContext({
+                      key: detail.key,
+                      tab: personaCatalogDetailTab,
+                      scrollY: personaCatalogDetailScrollYRef.current,
+                    });
                     setComposePersonaSelected(detail.key);
                     setTab("compose");
                     setPersonaCatalogDetail(null);
@@ -12507,6 +13533,11 @@ export default function App() {
                 <Pressable
                   style={styles.outlineButton}
                   onPress={() => {
+                    setPersonaCatalogDetailReturnContext({
+                      key: detail.key,
+                      tab: personaCatalogDetailTab,
+                      scrollY: personaCatalogDetailScrollYRef.current,
+                    });
                     setDialogueTargetKey(detail.key);
                     setTab("dialogue");
                     setPersonaCatalogDetail(null);
@@ -12560,7 +13591,17 @@ export default function App() {
                   {personaCatalogDetailCompatLoading ? (
                     <Text style={styles.subtle}>相性候補を読み込み中…</Text>
                   ) : personaCatalogDetailCompatError ? (
-                    <Text style={styles.errorText}>{personaCatalogDetailCompatError}</Text>
+                    <View style={{ gap: 6 }}>
+                      <Text style={styles.errorText}>{personaCatalogDetailCompatError}</Text>
+                      <View style={styles.headerActions}>
+                        <Pressable
+                          style={styles.outlineButton}
+                          onPress={() => void loadPersonaCatalogDetailCompat(detail.key)}
+                        >
+                          <Text style={styles.outlineButtonText}>相性を再試行</Text>
+                        </Pressable>
+                      </View>
+                    </View>
                   ) : personaCatalogDetailCompatItems.length === 0 ? (
                     <Text style={styles.subtle}>相性データはまだありません。</Text>
                   ) : (
@@ -12592,6 +13633,11 @@ export default function App() {
                             <Pressable
                               style={styles.outlineButton}
                               onPress={() => {
+                                setPersonaCatalogDetailReturnContext({
+                                  key: detail.key,
+                                  tab: "compat",
+                                  scrollY: personaCatalogDetailScrollYRef.current,
+                                });
                                 setDialogueSourceKey(detail.key);
                                 setDialogueTargetKey(item.targetKey);
                                 setTab("dialogue");
@@ -12650,6 +13696,11 @@ export default function App() {
                                 <Pressable
                                   style={styles.outlineButton}
                                   onPress={() => {
+                                    setPersonaCatalogDetailReturnContext({
+                                      key: detail.key,
+                                      tab: "dialogue",
+                                      scrollY: personaCatalogDetailScrollYRef.current,
+                                    });
                                     setComposeText((prev) => (prev.trim() ? `${prev}\n${draft}` : draft));
                                     setComposePersonaSelected(detail.key);
                                     setTab("compose");
@@ -12661,6 +13712,11 @@ export default function App() {
                                 <Pressable
                                   style={styles.outlineButton}
                                   onPress={() => {
+                                    setPersonaCatalogDetailReturnContext({
+                                      key: detail.key,
+                                      tab: "dialogue",
+                                      scrollY: personaCatalogDetailScrollYRef.current,
+                                    });
                                     setDialogueSourceKey(detail.key);
                                     setDialogueTargetKey(personaCatalogDetailDialogueTargetKey);
                                     setTab("dialogue");
@@ -12694,7 +13750,17 @@ export default function App() {
                   {personaCatalogDetailExamplesLoading ? (
                     <Text style={styles.subtle}>投稿例を読み込み中…</Text>
                   ) : personaCatalogDetailExamplesError ? (
-                    <Text style={styles.errorText}>{personaCatalogDetailExamplesError}</Text>
+                    <View style={{ gap: 6 }}>
+                      <Text style={styles.errorText}>{personaCatalogDetailExamplesError}</Text>
+                      <View style={styles.headerActions}>
+                        <Pressable
+                          style={styles.outlineButton}
+                          onPress={() => void loadPersonaCatalogDetailExamples(detail.key)}
+                        >
+                          <Text style={styles.outlineButtonText}>投稿例を再試行</Text>
+                        </Pressable>
+                      </View>
+                    </View>
                   ) : personaCatalogDetailExamples.length === 0 ? (
                     <Text style={styles.subtle}>このキャラの投稿例はまだありません。</Text>
                   ) : (
@@ -12704,19 +13770,55 @@ export default function App() {
                         const identity = resolveSocialIdentityLabels(resolvePostAuthorIdentity(post));
                         const text = String(post.text ?? post.body ?? "").trim();
                         const lie = analyzeLieScore({ text });
+                        const isHighlightedExample = highlightedExamplePostId === post.id;
                         return (
                           <Pressable
                             key={`persona-detail-example-${post.id}`}
-                            style={styles.soulmateRow}
+                            style={[
+                              styles.soulmateRow,
+                              isHighlightedExample && styles.personaExampleReturnHighlight,
+                              isHighlightedExample && styles.personaExampleReturnHighlightHost,
+                            ]}
+                            onLayout={(e) => {
+                              const keyId = String(detail.key ?? "").trim();
+                              const postId = String(post.id ?? "").trim();
+                              if (!keyId || !postId) return;
+                              const y = Number(e?.nativeEvent?.layout?.y ?? NaN);
+                              if (!Number.isFinite(y)) return;
+                              personaCatalogDetailExampleLayoutYRef.current[`${keyId}:${postId}`] = Math.max(0, y);
+                            }}
                             onPress={() => {
                               setPersonaCatalogDetail(null);
+                              setPersonaCatalogDetailReturnContext({
+                                key: detail.key,
+                                tab: "examples",
+                                scrollY: personaCatalogDetailScrollYRef.current,
+                                examplePostId: post.id,
+                              });
                               void openPostDetail(post.id, { source: "persona_catalog_examples" });
                             }}
                           >
+                            {isHighlightedExample ? (
+                              <Animated.View
+                                pointerEvents="none"
+                                style={[
+                                  styles.personaExampleReturnHighlightOverlay,
+                                  {
+                                    opacity: exampleHighlightOverlayOpacity,
+                                    transform: [{ scale: exampleHighlightScale }],
+                                  },
+                                ]}
+                              />
+                            ) : null}
                             <View style={styles.postMetaRow}>
                               <Text style={styles.postAuthor}>{identity.primary}</Text>
                               <Text style={styles.postMeta}>{formatRelativeTime(post.created_at)}</Text>
                             </View>
+                            {isHighlightedExample ? (
+                              <View style={styles.matchRow}>
+                                <Text style={styles.personaExampleReturnBadge}>直前に見た投稿</Text>
+                              </View>
+                            ) : null}
                             {identity.secondary ? (
                               <Text style={styles.postMeta}>{identity.secondary}</Text>
                             ) : null}
@@ -12963,6 +14065,7 @@ export default function App() {
       animationType="slide"
       onRequestClose={() => {
         setDetailVisible(false);
+        setDetailOpenSource("");
         setDetailPersonaMatch(null);
         setDetailSequenceIds([]);
         setDetailSequenceIndex(0);
@@ -13003,6 +14106,7 @@ export default function App() {
             style={styles.outlineButton}
             onPress={() => {
               setDetailVisible(false);
+              setDetailOpenSource("");
               setDetailPersonaMatch(null);
               setDetailSequenceIds([]);
               setDetailSequenceIndex(0);
@@ -13059,15 +14163,75 @@ export default function App() {
                 <Text style={styles.subtle}>左右スワイプでも前後投稿へ移動できます。</Text>
               </View>
             ) : null}
+            {detailOpenSource === "persona_catalog_examples" && personaCatalogDetailReturnContext ? (
+              <View style={styles.personaCard}>
+                <View style={styles.postMetaRow}>
+                  <Text style={styles.sectionTitle}>キャラ図鑑の投稿例から閲覧中</Text>
+                  <Text style={styles.postMeta}>@{personaCatalogDetailReturnContext.key}</Text>
+                </View>
+                <View style={styles.headerActions}>
+                  <Pressable style={styles.outlineButton} onPress={reopenPersonaCatalogDetailFromContext}>
+                    <Text style={styles.outlineButtonText}>キャラ詳細に戻る</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.outlineButton}
+                    onPress={() => setPersonaCatalogDetailReturnContext(null)}
+                  >
+                    <Text style={styles.outlineButtonText}>導線を閉じる</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
             {renderPostCard(detailPost, { showOpenHint: false })}
             {(() => {
               const text = String(detailPost.text ?? detailPost.body ?? "").trim();
+              const detailAttachmentKind = inferAttachmentKindForLieScore(detailPost as any);
+              const detailAttachmentMixKey = inferAttachmentMixKeyForLieScore(detailPost as any);
+              const lieHistoryMode = detailLieLearnedHistoryMode;
+              const lieHistoryPoints =
+                lieHistoryMode === "daily" ? detailLieLearnedHistoryDaily : detailLieLearnedHistory;
+              const lieHistoryAvailable =
+                lieHistoryMode === "daily"
+                  ? detailLieLearnedHistoryDailyAvailable
+                  : detailLieLearnedHistoryAvailable;
+              const lieTrendRaw = buildLieScoreLearnedContextTrendRatios(detailLieLearnedHistory, 12);
+              const lieTrendDaily = buildLieScoreLearnedContextTrendRatios(detailLieLearnedHistoryDaily, 12);
+              const lieTrendOverlay = Array.from(
+                { length: Math.max(lieTrendRaw.length, lieTrendDaily.length) },
+                (_, idx) => {
+                  const count = Math.max(lieTrendRaw.length, lieTrendDaily.length);
+                  const rawIdx = idx - (count - lieTrendRaw.length);
+                  const dailyIdx = idx - (count - lieTrendDaily.length);
+                  return {
+                    raw: rawIdx >= 0 ? lieTrendRaw[rawIdx] ?? null : null,
+                    daily: dailyIdx >= 0 ? lieTrendDaily[dailyIdx] ?? null : null,
+                    isLast: idx === count - 1,
+                  };
+                }
+              );
+              const lieLearnedTrend = buildLieScoreLearnedContextTrendRatios(lieHistoryPoints, 12);
               const lie = calibrateLieScoreWithFeedback(analyzeLieScore({ text }), {
                 opens: detailLieFeedback.opens,
                 replies: detailReplies.length,
                 reports: detailLieFeedback.reports,
                 truthTrueVotes: detailLieFeedback.truthTrueVotes,
                 truthFalseVotes: detailLieFeedback.truthFalseVotes,
+                learnedContext: detailLieLearnedContext,
+                context: {
+                  timeBucket: inferLieScoreTimeBucket(detailPost.created_at),
+                  weekdayBucket: inferLieScoreWeekdayBucket(detailPost.created_at),
+                  postFormat: normalizeLieScorePostFormat(extractLieScorePostFormat(detailPost.analysis)),
+                  personaKey: String(
+                    detailPost.analysis?.persona?.selected ??
+                      detailPost.analysis?.persona?.candidates?.[0]?.key ??
+                      ""
+                  ).trim() || null,
+                  attachmentKind: detailAttachmentKind,
+                  attachmentMixKey: detailAttachmentMixKey,
+                  hasAttachment: detailAttachmentKind !== "none",
+                  textLengthBucket: inferLieScoreTextLengthBucket(text),
+                  ageHours: inferLieScoreAgeHours(detailPost.created_at),
+                },
               });
               return (
                 <View style={styles.personaCard}>
@@ -13085,6 +14249,168 @@ export default function App() {
                       {lie.feedbackSignals.opens > 0 ? ` / 開封 ${lie.feedbackSignals.opens}` : ""}
                       {lie.feedbackSignals.reports > 0 ? ` / 通報 ${lie.feedbackSignals.reports}` : ""}
                     </Text>
+                  ) : null}
+                  {(lie.feedbackSignals.timeBucket || lie.feedbackSignals.postFormat) && (
+                    <Text style={styles.postMeta}>
+                      文脈補正: {lie.feedbackSignals.timeBucket ?? "time-?"} /{" "}
+                      {lie.feedbackSignals.weekdayBucket ?? "day-?"} / {lie.feedbackSignals.postFormat}
+                      {lie.feedbackSignals.weekdayTimeBucket
+                        ? ` / ${lie.feedbackSignals.weekdayTimeBucket}`
+                        : ""}
+                    </Text>
+                  )}
+                  <Text style={styles.postMeta}>
+                    補正条件: {lie.feedbackSignals.textLengthBucket ?? "len-?"} /{" "}
+                    添付 {lieScoreAttachmentKindLabel(lie.feedbackSignals.attachmentKind)} / 減衰{" "}
+                    {Math.round(lie.feedbackSignals.feedbackDecay * 100)}%
+                  </Text>
+                  <Text style={styles.postMeta}>
+                    学習係数:{" "}
+                    {!detailLieLearnedAvailable
+                      ? "DB未適用"
+                      : lie.feedbackSignals.learnedAdjustmentBias == null
+                        ? "未学習"
+                        : `${Math.round(lie.feedbackSignals.learnedAdjustmentBias * 100)}pt (信頼 ${Math.round(
+                            (lie.feedbackSignals.learnedConfidence ?? 0) * 100
+                          )}% / n=${lie.feedbackSignals.learnedSamples})`}
+                    {lie.feedbackSignals.learnedContextKey
+                      ? ` / ${lie.feedbackSignals.learnedContextKey}`
+                      : ""}
+                  </Text>
+                  <View style={styles.headerActions}>
+                    <Pressable
+                      style={[
+                        styles.assistChip,
+                        detailLieLearnedHistoryMode === "overlay" && styles.modeButtonActive,
+                        (!detailLieLearnedHistoryAvailable || !detailLieLearnedHistoryDailyAvailable) &&
+                          styles.disabledButton,
+                      ]}
+                      onPress={() => {
+                        if (!detailLieLearnedHistoryAvailable || !detailLieLearnedHistoryDailyAvailable) return;
+                        setDetailLieLearnedHistoryMode("overlay");
+                      }}
+                      disabled={!detailLieLearnedHistoryAvailable || !detailLieLearnedHistoryDailyAvailable}
+                    >
+                      <Text style={styles.assistChipText}>overlay</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[
+                        styles.assistChip,
+                        detailLieLearnedHistoryMode === "raw" && styles.modeButtonActive,
+                      ]}
+                      onPress={() => setDetailLieLearnedHistoryMode("raw")}
+                    >
+                      <Text style={styles.assistChipText}>raw</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[
+                        styles.assistChip,
+                        detailLieLearnedHistoryMode === "daily" && styles.modeButtonActive,
+                        !detailLieLearnedHistoryDailyAvailable && styles.disabledButton,
+                      ]}
+                      onPress={() => {
+                        if (!detailLieLearnedHistoryDailyAvailable) return;
+                        setDetailLieLearnedHistoryMode("daily");
+                      }}
+                      disabled={!detailLieLearnedHistoryDailyAvailable}
+                    >
+                      <Text style={styles.assistChipText}>daily</Text>
+                    </Pressable>
+                  </View>
+                  {detailLieLearnedHistoryMode === "overlay" &&
+                  detailLieLearnedHistoryAvailable &&
+                  detailLieLearnedHistoryDailyAvailable &&
+                  lieTrendOverlay.length >= 2 ? (
+                    <View style={{ gap: 6 }}>
+                      <View style={styles.postMetaRow}>
+                        <Text style={styles.postMeta}>文脈学習の推移 (重ね表示)</Text>
+                        <Text style={styles.postMeta}>
+                          raw {formatLieLearnedBiasPt(detailLieLearnedHistory[0]?.adjustmentBias)} →{" "}
+                          {formatLieLearnedBiasPt(
+                            detailLieLearnedHistory[detailLieLearnedHistory.length - 1]?.adjustmentBias
+                          )}{" "}
+                          / daily {formatLieLearnedBiasPt(detailLieLearnedHistoryDaily[0]?.adjustmentBias)} →{" "}
+                          {formatLieLearnedBiasPt(
+                            detailLieLearnedHistoryDaily[detailLieLearnedHistoryDaily.length - 1]?.adjustmentBias
+                          )}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 3, minHeight: 28 }}>
+                        {lieTrendOverlay.map((pair, idx) => (
+                          <View
+                            key={`detail-lie-learned-trend-overlay-${detailPost.id}-${idx}`}
+                            style={{ width: 8, height: 30, position: "relative", justifyContent: "flex-end" }}
+                          >
+                            {pair.daily != null ? (
+                              <View
+                                style={{
+                                  position: "absolute",
+                                  bottom: 0,
+                                  left: 0,
+                                  right: 0,
+                                  height: 8 + Math.round(Math.max(0.08, pair.daily) * 22),
+                                  borderRadius: 3,
+                                  backgroundColor: pair.isLast ? "rgba(34,211,238,0.9)" : "rgba(34,211,238,0.35)",
+                                }}
+                              />
+                            ) : null}
+                            {pair.raw != null ? (
+                              <View
+                                style={{
+                                  position: "absolute",
+                                  bottom: 0,
+                                  left: 1,
+                                  right: 1,
+                                  height: 8 + Math.round(Math.max(0.08, pair.raw) * 22),
+                                  borderRadius: 3,
+                                  backgroundColor: pair.isLast ? "#2563EB" : "rgba(37,99,235,0.45)",
+                                }}
+                              />
+                            ) : null}
+                          </View>
+                        ))}
+                      </View>
+                      <Text style={styles.postMeta}>青=raw / 水色=daily</Text>
+                    </View>
+                  ) : lieHistoryAvailable && lieHistoryPoints.length >= 2 ? (
+                    <View style={{ gap: 6 }}>
+                      <View style={styles.postMetaRow}>
+                        <Text style={styles.postMeta}>
+                          文脈学習の推移 ({detailLieLearnedHistoryMode === "daily" ? "日次集約" : "生履歴"})
+                        </Text>
+                        <Text style={styles.postMeta}>
+                          {formatLieLearnedBiasPt(lieHistoryPoints[0]?.adjustmentBias)} →{" "}
+                          {formatLieLearnedBiasPt(
+                            lieHistoryPoints[lieHistoryPoints.length - 1]?.adjustmentBias
+                          )}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 3, minHeight: 28 }}>
+                        {lieLearnedTrend.map((ratio, idx) => (
+                          <View
+                            key={`detail-lie-learned-trend-${detailPost.id}-${idx}`}
+                            style={{
+                              width: 7,
+                              height: 8 + Math.round(Math.max(0.08, ratio) * 22),
+                              borderRadius: 3,
+                              backgroundColor:
+                                idx === lieLearnedTrend.length - 1 ? "#2563EB" : "rgba(37,99,235,0.35)",
+                            }}
+                          />
+                        ))}
+                      </View>
+                    </View>
+                  ) : detailLieLearnedHistoryMode === "overlay" &&
+                    (!detailLieLearnedHistoryAvailable || !detailLieLearnedHistoryDailyAvailable) ? (
+                    <Text style={styles.postMeta}>重ね表示は raw/daily 両方の履歴DB適用時に利用できます。</Text>
+                  ) : detailLieLearnedHistoryMode === "overlay" ? (
+                    <Text style={styles.postMeta}>重ね表示に十分な履歴がまだありません（raw/daily を参照）。</Text>
+                  ) : !lieHistoryAvailable ? (
+                    <Text style={styles.postMeta}>
+                      学習係数履歴 ({detailLieLearnedHistoryMode === "daily" ? "日次集約" : "生履歴"}): DB未適用
+                    </Text>
+                  ) : detailLieLearnedHistoryMode === "daily" ? (
+                    <Text style={styles.postMeta}>日次集約履歴はまだありません（raw を参照してください）。</Text>
                   ) : null}
                   <View style={styles.chipWrap}>
                     {lie.cautionChips.map((chip: string) => (
@@ -13482,6 +14808,7 @@ export default function App() {
       {renderPersonaCatalogDetailModal()}
       {renderPostDetailModal()}
       {renderFormatRailViewerModal()}
+      {renderTimelineWeightsChartModal()}
     </SafeAreaView>
   );
 }
@@ -13864,6 +15191,31 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 10,
     gap: 4,
+  },
+  personaExampleReturnHighlight: {
+    borderColor: "#2563EB",
+    backgroundColor: "#EFF6FF",
+  },
+  personaExampleReturnHighlightHost: {
+    position: "relative",
+  },
+  personaExampleReturnHighlightOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: "#3B82F6",
+    backgroundColor: "#DBEAFE",
+  },
+  personaExampleReturnBadge: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#1D4ED8",
+    borderWidth: 1,
+    borderColor: "#93C5FD",
+    backgroundColor: "#DBEAFE",
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
   },
   modalContainer: {
     flex: 1,

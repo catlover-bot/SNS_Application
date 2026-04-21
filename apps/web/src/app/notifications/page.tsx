@@ -116,7 +116,7 @@ export default function NotificationsPage() {
         }
       );
     } catch (e: any) {
-      listActions.setError(e?.message ?? "既読化に失敗しました");
+      listActions.fail(e?.message ?? "既読化に失敗しました");
     } finally {
       setBusyRead(false);
     }

@@ -1,11 +1,23 @@
 // apps/web/src/components/PostCard.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   analyzeLieScore,
+  buildLieScoreLearnedContextTrendRatios,
+  buildLieScoreLearnedContextKey,
   calibrateLieScoreWithFeedback,
+  deriveLieScoreLearnedContextObservation,
+  evolveLieScoreLearnedContextCoefficient,
+  inferLieScoreAgeHours,
+  inferLieScoreTextLengthBucket,
+  inferLieScoreTimeBucket,
+  inferLieScoreWeekdayBucket,
+  type LieScoreAttachmentKind,
+  type LieScoreLearnedContextCoefficient,
+  type LieScoreLearnedContextHistoryPoint,
+  normalizeLieScorePostFormat,
   resolveSocialIdentity,
   resolveSocialIdentityLabels,
 } from "@sns/core";
@@ -34,6 +46,82 @@ type Post = {
 function isMissingRelationError(err: any, relation: string) {
   const text = `${err?.message ?? ""} ${err?.details ?? ""} ${err?.hint ?? ""}`.toLowerCase();
   return text.includes(relation.toLowerCase()) && text.includes("does not exist");
+}
+
+function inferAttachmentKindHint(post: Post, content: string): LieScoreAttachmentKind {
+  const analysis = post.analysis as any;
+  let hasImage = false;
+  let hasVideo = false;
+  let hasUrl = false;
+  const attachments = [
+    ...(Array.isArray(analysis?.attachments) ? analysis.attachments : []),
+    ...(Array.isArray(analysis?.media) ? analysis.media : []),
+    ...(Array.isArray(analysis?.images) ? analysis.images : []),
+  ];
+  attachments.forEach((raw: any) => {
+    const text = String(
+      raw?.type ?? raw?.mime_type ?? raw?.mime ?? raw?.kind ?? raw?.url ?? raw?.src ?? raw ?? ""
+    ).toLowerCase();
+    if (!text) return;
+    if (/video|mp4|mov|webm|m3u8/.test(text)) hasVideo = true;
+    if (/image|png|jpe?g|gif|webp|heic|avif/.test(text)) hasImage = true;
+    if (/https?:\/\//.test(text)) hasUrl = true;
+  });
+  if (
+    Number(analysis?.media_count ?? analysis?.image_count ?? analysis?.attachments_count ?? 0) > 0
+  ) {
+    hasImage = hasImage || Number(analysis?.image_count ?? 0) > 0 || !hasVideo;
+  }
+  const urls = content.match(/https?:\/\/\S+/gi) ?? [];
+  urls.forEach((u) => {
+    hasUrl = true;
+    if (/\.(mp4|mov|webm)(\?|$)/i.test(u)) hasVideo = true;
+    if (/\.(png|jpe?g|gif|webp|heic|avif)(\?|$)/i.test(u)) hasImage = true;
+  });
+  const kindCount = [hasImage, hasVideo, hasUrl].filter(Boolean).length;
+  if (kindCount > 1) return "mixed";
+  if (hasVideo) return "video";
+  if (hasImage) return "image";
+  if (hasUrl) return "url";
+  return "none";
+}
+
+function inferAttachmentMixKeyHint(post: Post, content: string): string {
+  const analysis = post.analysis as any;
+  let imageCount = 0;
+  let videoCount = 0;
+  let urlCount = 0;
+  const attachments = [
+    ...(Array.isArray(analysis?.attachments) ? analysis.attachments : []),
+    ...(Array.isArray(analysis?.media) ? analysis.media : []),
+    ...(Array.isArray(analysis?.images) ? analysis.images : []),
+  ];
+  attachments.forEach((raw: any) => {
+    const text = String(
+      raw?.type ?? raw?.mime_type ?? raw?.mime ?? raw?.kind ?? raw?.url ?? raw?.src ?? raw ?? ""
+    ).toLowerCase();
+    if (!text) return;
+    if (/video|mp4|mov|webm|m3u8/.test(text)) videoCount += 1;
+    if (/image|png|jpe?g|gif|webp|heic|avif/.test(text)) imageCount += 1;
+    if (/https?:\/\//.test(text)) urlCount += 1;
+  });
+  const urls = content.match(/https?:\/\/\S+/gi) ?? [];
+  urls.forEach((u) => {
+    urlCount += 1;
+    if (/\.(mp4|mov|webm)(\?|$)/i.test(u)) videoCount += 1;
+    if (/\.(png|jpe?g|gif|webp|heic|avif)(\?|$)/i.test(u)) imageCount += 1;
+  });
+  if (imageCount <= 0 && videoCount <= 0 && urlCount <= 0) return "none";
+  const b = (n: number) => (n <= 0 ? 0 : n === 1 ? 1 : 2);
+  return `i${b(imageCount)}v${b(videoCount)}u${b(urlCount)}`;
+}
+
+function attachmentKindLabel(kind: LieScoreAttachmentKind) {
+  if (kind === "image") return "画像";
+  if (kind === "video") return "動画";
+  if (kind === "url") return "URL";
+  if (kind === "mixed") return "複合";
+  return "なし";
 }
 
 function ScoreBadge({
@@ -88,6 +176,53 @@ export default function PostCard({
   const lieAnalysis = useMemo(() => analyzeLieScore({ text: content }), [content]);
   const [openCount, setOpenCount] = useState(0);
   const [reportCount, setReportCount] = useState(0);
+  const [viewerId, setViewerId] = useState<string | null>(null);
+  const [lieLearnedContext, setLieLearnedContext] = useState<LieScoreLearnedContextCoefficient | null>(null);
+  const [lieLearnedContextAvailable, setLieLearnedContextAvailable] = useState(true);
+  const [lieLearnedHistory, setLieLearnedHistory] = useState<LieScoreLearnedContextHistoryPoint[]>([]);
+  const [lieLearnedHistoryAvailable, setLieLearnedHistoryAvailable] = useState(true);
+  const [lieLearnedHistoryDaily, setLieLearnedHistoryDaily] = useState<LieScoreLearnedContextHistoryPoint[]>([]);
+  const [lieLearnedHistoryDailyAvailable, setLieLearnedHistoryDailyAvailable] = useState(true);
+  const [lieLearnedHistoryMode, setLieLearnedHistoryMode] = useState<"raw" | "daily" | "overlay">("overlay");
+  const lieLearnedPersistSigRef = useRef<string>("");
+  const displayedLieLearnedHistory = useMemo(
+    () => (lieLearnedHistoryMode === "daily" ? lieLearnedHistoryDaily : lieLearnedHistory),
+    [lieLearnedHistory, lieLearnedHistoryDaily, lieLearnedHistoryMode]
+  );
+  const displayedLieLearnedHistoryAvailable = useMemo(
+    () => (lieLearnedHistoryMode === "daily" ? lieLearnedHistoryDailyAvailable : lieLearnedHistoryAvailable),
+    [lieLearnedHistoryAvailable, lieLearnedHistoryDailyAvailable, lieLearnedHistoryMode]
+  );
+  const rawLieLearnedTrendRatios = useMemo(
+    () => buildLieScoreLearnedContextTrendRatios(lieLearnedHistory, 12),
+    [lieLearnedHistory]
+  );
+  const dailyLieLearnedTrendRatios = useMemo(
+    () => buildLieScoreLearnedContextTrendRatios(lieLearnedHistoryDaily, 12),
+    [lieLearnedHistoryDaily]
+  );
+  const overlayLieLearnedTrendBars = useMemo(() => {
+    const raw = rawLieLearnedTrendRatios;
+    const daily = dailyLieLearnedTrendRatios;
+    const count = Math.max(raw.length, daily.length);
+    if (count <= 0) return [] as Array<{ raw: number | null; daily: number | null; isLast: boolean }>;
+    return Array.from({ length: count }, (_, idx) => {
+      const rawIdx = idx - (count - raw.length);
+      const dailyIdx = idx - (count - daily.length);
+      return {
+        raw: rawIdx >= 0 ? raw[rawIdx] ?? null : null,
+        daily: dailyIdx >= 0 ? daily[dailyIdx] ?? null : null,
+        isLast: idx === count - 1,
+      };
+    });
+  }, [dailyLieLearnedTrendRatios, rawLieLearnedTrendRatios]);
+  const lieLearnedTrendRatios = useMemo(
+    () =>
+      lieLearnedHistoryMode === "overlay"
+        ? rawLieLearnedTrendRatios
+        : buildLieScoreLearnedContextTrendRatios(displayedLieLearnedHistory, 12),
+    [displayedLieLearnedHistory, lieLearnedHistoryMode, rawLieLearnedTrendRatios]
+  );
   const postPersonaKey = String(
     p.analysis?.persona?.selected ??
       p.analysis?.persona?.candidates?.[0]?.key ??
@@ -194,15 +329,52 @@ export default function PostCard({
   // 🔥 LLM 由来の「嘘％」（AI 判定バッジから通知される）
   const [aiLiePercent, setAiLiePercent] = useState<number | null>(null);
   const calibratedLie = useMemo(
-    () =>
-      calibrateLieScoreWithFeedback(lieAnalysis, {
+    () => {
+      const content = String(p.text ?? p.body ?? "");
+      const attachmentKind = inferAttachmentKindHint(p, content);
+      const attachmentMixKey = inferAttachmentMixKeyHint(p, content);
+      return calibrateLieScoreWithFeedback(lieAnalysis, {
         opens: openCount,
         replies: replyCount,
         reports: reportCount,
         truthTrueVotes: voteTrue,
         truthFalseVotes: voteFalse,
-      }),
-    [lieAnalysis, openCount, replyCount, reportCount, voteFalse, voteTrue]
+        learnedContext: lieLearnedContext,
+        context: {
+          timeBucket: inferLieScoreTimeBucket(p.created_at),
+          weekdayBucket: inferLieScoreWeekdayBucket(p.created_at),
+          postFormat: normalizeLieScorePostFormat(
+            String(
+              p.analysis?.post_format ??
+                p.analysis?.postFormat ??
+                p.analysis?.persona?.post_format ??
+                ""
+            ) || null
+          ),
+          personaKey: String(
+            p.analysis?.persona?.selected ?? p.analysis?.persona?.candidates?.[0]?.key ?? ""
+          ).trim() || null,
+          attachmentKind,
+          attachmentMixKey,
+          hasAttachment: attachmentKind !== "none",
+          textLengthBucket: inferLieScoreTextLengthBucket(content),
+          ageHours: inferLieScoreAgeHours(p.created_at),
+        },
+      });
+    },
+    [
+      lieAnalysis,
+      lieLearnedContext,
+      openCount,
+      p.analysis,
+      p.body,
+      p.created_at,
+      p.text,
+      replyCount,
+      reportCount,
+      voteFalse,
+      voteTrue,
+    ]
   );
 
   // Hydration エラー対策：ロケール固定でフォーマット
@@ -246,6 +418,7 @@ export default function PostCard({
       const {
         data: { user },
       } = await sb.auth.getUser();
+      if (alive) setViewerId(user?.id ?? null);
 
       if (user) {
         // 自分の「いいね」
@@ -369,6 +542,276 @@ export default function PostCard({
     return () => {
       stop = true;
     };
+  }, [p.id]);
+
+  useEffect(() => {
+    if (!viewerId) return;
+    const content = String(p.text ?? p.body ?? "");
+    const attachmentKind = inferAttachmentKindHint(p, content);
+    const attachmentMixKey = inferAttachmentMixKeyHint(p, content);
+    const feedbackInput = {
+      opens: openCount,
+      replies: replyCount,
+      reports: reportCount,
+      truthTrueVotes: voteTrue,
+      truthFalseVotes: voteFalse,
+      context: {
+        timeBucket: inferLieScoreTimeBucket(p.created_at),
+        weekdayBucket: inferLieScoreWeekdayBucket(p.created_at),
+        postFormat: normalizeLieScorePostFormat(
+          String(
+            p.analysis?.post_format ??
+              p.analysis?.postFormat ??
+              p.analysis?.persona?.post_format ??
+              ""
+          ) || null
+        ),
+        personaKey: postPersonaKey || null,
+        attachmentKind,
+        attachmentMixKey,
+        hasAttachment: attachmentKind !== "none",
+        textLengthBucket: inferLieScoreTextLengthBucket(content),
+        ageHours: inferLieScoreAgeHours(p.created_at),
+      },
+    } as const;
+    const provisional = calibrateLieScoreWithFeedback(lieAnalysis, feedbackInput);
+    const weekdayTimeBucket = provisional.feedbackSignals.weekdayTimeBucket;
+    const contextKey =
+      provisional.feedbackSignals.learnedContextKey ??
+      buildLieScoreLearnedContextKey({
+        weekdayTimeBucket,
+        personaKey: provisional.feedbackSignals.personaKey,
+        attachmentMixKey,
+      });
+
+    if (!weekdayTimeBucket || !contextKey) {
+      setLieLearnedContext(null);
+      setLieLearnedHistory([]);
+      return;
+    }
+
+    const sig = JSON.stringify({
+      viewerId,
+      postId: p.id,
+      contextKey,
+      opens: openCount,
+      replies: replyCount,
+      reports: reportCount,
+      truthTrueVotes: voteTrue,
+      truthFalseVotes: voteFalse,
+    });
+    if (lieLearnedPersistSigRef.current === sig) return;
+    lieLearnedPersistSigRef.current = sig;
+
+    let alive = true;
+    (async () => {
+      try {
+        const [res, historyRes, historyDailyRes] = await Promise.all([
+          sb
+            .from("user_lie_score_context_coefficients")
+            .select("context_key,adjustment_bias,confidence,samples,updated_at")
+            .eq("user_id", viewerId)
+            .eq("context_key", contextKey)
+            .maybeSingle(),
+          sb
+            .from("user_lie_score_context_coefficient_history")
+            .select("created_at,adjustment_bias,confidence,samples")
+            .eq("user_id", viewerId)
+            .eq("context_key", contextKey)
+            .order("created_at", { ascending: false })
+            .limit(14),
+          sb
+            .from("user_lie_score_context_coefficient_history_daily")
+            .select("day,avg_adjustment_bias,avg_confidence,points")
+            .eq("user_id", viewerId)
+            .eq("context_key", contextKey)
+            .order("day", { ascending: false })
+            .limit(45),
+        ]);
+
+        if (historyRes.error) {
+          if (isMissingRelationError(historyRes.error, "user_lie_score_context_coefficient_history")) {
+            if (alive) {
+              setLieLearnedHistoryAvailable(false);
+              setLieLearnedHistory([]);
+            }
+          } else {
+            throw historyRes.error;
+          }
+        } else if (alive) {
+          setLieLearnedHistoryAvailable(true);
+          setLieLearnedHistory(
+            ((historyRes.data ?? []) as any[])
+              .map((row) => {
+                const at = String(row?.created_at ?? "").trim();
+                if (!at) return null;
+                return {
+                  at,
+                  adjustmentBias: Number(row?.adjustment_bias ?? 0) || 0,
+                  confidence: Math.max(0, Math.min(1, Number(row?.confidence ?? 0) || 0)),
+                  samples: Math.max(0, Math.floor(Number(row?.samples ?? 0) || 0)),
+                } satisfies LieScoreLearnedContextHistoryPoint;
+              })
+              .filter(Boolean)
+              .reverse() as LieScoreLearnedContextHistoryPoint[]
+          );
+        }
+
+        if (historyDailyRes.error) {
+          if (isMissingRelationError(historyDailyRes.error, "user_lie_score_context_coefficient_history_daily")) {
+            if (alive) {
+              setLieLearnedHistoryDailyAvailable(false);
+              setLieLearnedHistoryDaily([]);
+            }
+          } else {
+            throw historyDailyRes.error;
+          }
+        } else if (alive) {
+          setLieLearnedHistoryDailyAvailable(true);
+          setLieLearnedHistoryDaily(
+            ((historyDailyRes.data ?? []) as any[])
+              .map((row) => {
+                const day = String(row?.day ?? "").trim();
+                if (!day) return null;
+                return {
+                  at: `${day}T00:00:00.000Z`,
+                  adjustmentBias: Number(row?.avg_adjustment_bias ?? 0) || 0,
+                  confidence: Math.max(0, Math.min(1, Number(row?.avg_confidence ?? 0) || 0)),
+                  samples: Math.max(0, Math.floor(Number(row?.points ?? 0) || 0)),
+                } satisfies LieScoreLearnedContextHistoryPoint;
+              })
+              .filter(Boolean)
+              .reverse() as LieScoreLearnedContextHistoryPoint[]
+          );
+        }
+
+        if (res.error) {
+          if (isMissingRelationError(res.error, "user_lie_score_context_coefficients")) {
+            if (alive) {
+              setLieLearnedContextAvailable(false);
+              setLieLearnedContext(null);
+            }
+            return;
+          }
+          throw res.error;
+        }
+
+        let current: LieScoreLearnedContextCoefficient | null = res.data
+          ? {
+              contextKey: String((res.data as any).context_key ?? contextKey),
+              adjustmentBias: Number((res.data as any).adjustment_bias ?? 0) || 0,
+              confidence: Number((res.data as any).confidence ?? 0) || 0,
+              samples: Math.max(0, Math.floor(Number((res.data as any).samples ?? 0) || 0)),
+              updatedAt: (res.data as any).updated_at ?? null,
+            }
+          : null;
+
+        if (alive) setLieLearnedContextAvailable(true);
+
+        const observation = deriveLieScoreLearnedContextObservation(feedbackInput);
+        if (observation) {
+          const next = evolveLieScoreLearnedContextCoefficient({
+            current,
+            observation,
+          });
+          const nowIso = new Date().toISOString();
+          const [up, historyInsert] = await Promise.all([
+            sb.from("user_lie_score_context_coefficients").upsert(
+              {
+                user_id: viewerId,
+                context_key: contextKey,
+                weekday_time_bucket: weekdayTimeBucket,
+                persona_key: provisional.feedbackSignals.personaKey ?? "global",
+                attachment_mix_key: attachmentMixKey,
+                adjustment_bias: next.adjustmentBias,
+                confidence: next.confidence,
+                samples: next.samples,
+                updated_at: nowIso,
+              },
+              { onConflict: "user_id,context_key" }
+            ),
+            sb.from("user_lie_score_context_coefficient_history").insert({
+              user_id: viewerId,
+              context_key: contextKey,
+              weekday_time_bucket: weekdayTimeBucket,
+              persona_key: provisional.feedbackSignals.personaKey ?? "global",
+              attachment_mix_key: attachmentMixKey,
+              adjustment_bias: next.adjustmentBias,
+              confidence: next.confidence,
+              samples: next.samples,
+              created_at: nowIso,
+            }),
+          ]);
+          if (up.error) {
+            if (isMissingRelationError(up.error, "user_lie_score_context_coefficients")) {
+              if (alive) {
+                setLieLearnedContextAvailable(false);
+                setLieLearnedContext(null);
+              }
+              return;
+            }
+          } else {
+            current = {
+              contextKey,
+              adjustmentBias: next.adjustmentBias,
+              confidence: next.confidence,
+              samples: next.samples,
+              updatedAt: nowIso,
+            };
+            if (!historyInsert.error && alive) {
+              setLieLearnedHistoryMode("overlay");
+              setLieLearnedHistory((prev) =>
+                [
+                  ...prev,
+                  {
+                    at: nowIso,
+                    adjustmentBias: next.adjustmentBias,
+                    confidence: next.confidence,
+                    samples: next.samples,
+                  } satisfies LieScoreLearnedContextHistoryPoint,
+                ].slice(-14)
+              );
+            } else if (
+              historyInsert.error &&
+              isMissingRelationError(historyInsert.error, "user_lie_score_context_coefficient_history")
+            ) {
+              if (alive) setLieLearnedHistoryAvailable(false);
+            }
+          }
+        }
+
+        if (!alive) return;
+        setLieLearnedContext(current);
+      } catch {
+        if (!alive) return;
+        setLieLearnedContext(null);
+        setLieLearnedHistory([]);
+        setLieLearnedHistoryDaily([]);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [
+    lieAnalysis,
+    openCount,
+    p.analysis,
+    p.body,
+    p.created_at,
+    p.id,
+    p.text,
+    postPersonaKey,
+    replyCount,
+    reportCount,
+    sb,
+    viewerId,
+    voteFalse,
+    voteTrue,
+  ]);
+
+  useEffect(() => {
+    setLieLearnedHistoryMode("overlay");
   }, [p.id]);
 
   async function ensureLoginOrRedirect() {
@@ -713,6 +1156,140 @@ export default function PostCard({
               : ""}
           </div>
         )}
+        {(calibratedLie.feedbackSignals.timeBucket || calibratedLie.feedbackSignals.postFormat) && (
+          <div className="text-[11px] text-slate-400 text-right">
+            文脈 {calibratedLie.feedbackSignals.timeBucket ?? "time-?"} /{" "}
+            {calibratedLie.feedbackSignals.weekdayBucket ?? "day-?"} /{" "}
+            {calibratedLie.feedbackSignals.postFormat}
+            {calibratedLie.feedbackSignals.weekdayTimeBucket
+              ? ` / ${calibratedLie.feedbackSignals.weekdayTimeBucket}`
+              : ""}
+          </div>
+        )}
+        <div className="text-[11px] text-slate-400 text-right">
+          条件 {calibratedLie.feedbackSignals.textLengthBucket ?? "len-?"} /{" "}
+          添付 {attachmentKindLabel(calibratedLie.feedbackSignals.attachmentKind)} / 減衰{" "}
+          {Math.round(calibratedLie.feedbackSignals.feedbackDecay * 100)}%
+        </div>
+        <div className="text-[11px] text-slate-400 text-right">
+          学習係数{" "}
+          {!lieLearnedContextAvailable
+            ? "DB未適用"
+            : calibratedLie.feedbackSignals.learnedAdjustmentBias == null
+              ? "未学習"
+              : `${Math.round(calibratedLie.feedbackSignals.learnedAdjustmentBias * 100)}pt (信頼 ${Math.round(
+                  (calibratedLie.feedbackSignals.learnedConfidence ?? 0) * 100
+                )}% / n=${calibratedLie.feedbackSignals.learnedSamples})`}
+        </div>
+        <div className="flex justify-end gap-1">
+          <button
+            type="button"
+            onClick={() => {
+              if (!lieLearnedHistoryAvailable || !lieLearnedHistoryDailyAvailable) return;
+              setLieLearnedHistoryMode("overlay");
+            }}
+            disabled={!lieLearnedHistoryAvailable || !lieLearnedHistoryDailyAvailable}
+            className={`text-[10px] px-2 py-0.5 rounded-full border ${
+              lieLearnedHistoryMode === "overlay"
+                ? "bg-blue-50 border-blue-300 text-blue-700"
+                : "bg-white text-slate-500"
+            } disabled:opacity-50`}
+          >
+            overlay
+          </button>
+          <button
+            type="button"
+            onClick={() => setLieLearnedHistoryMode("raw")}
+            className={`text-[10px] px-2 py-0.5 rounded-full border ${
+              lieLearnedHistoryMode === "raw" ? "bg-blue-50 border-blue-300 text-blue-700" : "bg-white text-slate-500"
+            }`}
+          >
+            raw
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (!lieLearnedHistoryDailyAvailable) return;
+              setLieLearnedHistoryMode("daily");
+            }}
+            disabled={!lieLearnedHistoryDailyAvailable}
+            className={`text-[10px] px-2 py-0.5 rounded-full border ${
+              lieLearnedHistoryMode === "daily" ? "bg-blue-50 border-blue-300 text-blue-700" : "bg-white text-slate-500"
+            } disabled:opacity-50`}
+          >
+            daily
+          </button>
+        </div>
+        {lieLearnedHistoryMode === "overlay" &&
+        lieLearnedHistoryAvailable &&
+        lieLearnedHistoryDailyAvailable &&
+        overlayLieLearnedTrendBars.length >= 2 ? (
+          <div className="space-y-1">
+            <div className="text-[11px] text-slate-400 text-right">
+              推移 (重ね表示) raw {Math.round((lieLearnedHistory[0]?.adjustmentBias ?? 0) * 100)}pt →{" "}
+              {Math.round((lieLearnedHistory[lieLearnedHistory.length - 1]?.adjustmentBias ?? 0) * 100)}pt / daily{" "}
+              {Math.round((lieLearnedHistoryDaily[0]?.adjustmentBias ?? 0) * 100)}pt →{" "}
+              {Math.round((lieLearnedHistoryDaily[lieLearnedHistoryDaily.length - 1]?.adjustmentBias ?? 0) * 100)}pt
+            </div>
+            <div className="flex justify-end">
+              <div className="flex items-end gap-[2px] h-7">
+                {overlayLieLearnedTrendBars.map((pair, idx) => (
+                  <div key={`lie-trend-overlay-${p.id}-${idx}`} className="relative w-2 h-7">
+                    {pair.daily != null ? (
+                      <div
+                        className={`absolute bottom-0 left-0 right-0 rounded-sm ${
+                          pair.isLast ? "bg-cyan-400/80" : "bg-cyan-200"
+                        }`}
+                        style={{ height: `${Math.round(8 + Math.max(0.08, pair.daily) * 18)}px` }}
+                      />
+                    ) : null}
+                    {pair.raw != null ? (
+                      <div
+                        className={`absolute bottom-0 left-[1px] right-[1px] rounded-sm ${
+                          pair.isLast ? "bg-blue-600" : "bg-blue-300"
+                        }`}
+                        style={{ height: `${Math.round(8 + Math.max(0.08, pair.raw) * 18)}px` }}
+                      />
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="text-[10px] text-slate-400 text-right">青=raw / 水色=daily</div>
+          </div>
+        ) : displayedLieLearnedHistoryAvailable && displayedLieLearnedHistory.length >= 2 ? (
+          <div className="space-y-1">
+            <div className="text-[11px] text-slate-400 text-right">
+              推移 ({lieLearnedHistoryMode === "daily" ? "日次集約" : "生履歴"}){" "}
+              {Math.round((displayedLieLearnedHistory[0]?.adjustmentBias ?? 0) * 100)}pt →{" "}
+              {Math.round(
+                (displayedLieLearnedHistory[displayedLieLearnedHistory.length - 1]?.adjustmentBias ?? 0) * 100
+              )}pt
+            </div>
+            <div className="flex justify-end">
+              <div className="flex items-end gap-[2px] h-7">
+                {lieLearnedTrendRatios.map((ratio, idx) => (
+                  <div
+                    key={`lie-trend-${p.id}-${idx}`}
+                    className={`w-1.5 rounded-sm ${idx === lieLearnedTrendRatios.length - 1 ? "bg-blue-500" : "bg-blue-200"}`}
+                    style={{ height: `${Math.round(8 + Math.max(0.08, ratio) * 18)}px` }}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : lieLearnedHistoryMode === "overlay" &&
+          (!lieLearnedHistoryAvailable || !lieLearnedHistoryDailyAvailable) ? (
+          <div className="text-[11px] text-slate-400 text-right">重ね表示は raw/daily 両方の履歴DB適用時に利用できます</div>
+        ) : lieLearnedHistoryMode === "overlay" ? (
+          <div className="text-[11px] text-slate-400 text-right">重ね表示に十分な履歴がまだありません（raw/daily を参照）</div>
+        ) : !displayedLieLearnedHistoryAvailable ? (
+          <div className="text-[11px] text-slate-400 text-right">
+            学習係数履歴 ({lieLearnedHistoryMode === "daily" ? "日次集約" : "生履歴"}) DB未適用
+          </div>
+        ) : lieLearnedHistoryMode === "daily" ? (
+          <div className="text-[11px] text-slate-400 text-right">日次集約履歴はまだありません（raw を参照）</div>
+        ) : null}
         {calibratedLie.reasons[0] && (
           <div className="text-[11px] text-slate-500 text-right">{calibratedLie.reasons[0]}</div>
         )}

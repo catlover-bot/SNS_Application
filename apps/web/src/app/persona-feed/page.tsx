@@ -419,34 +419,6 @@ export default function PersonaFeedPage() {
   const hiddenIds = useRef<Set<string>>(new Set());
   const missionOpenedPostKeys = useRef<Set<string>>(new Set());
 
-  const setItems = useCallback(
-    (next: FeedItem[] | ((prev: FeedItem[]) => FeedItem[])) => {
-      const prevItems = itemsRef.current;
-      const resolved =
-        typeof next === "function" ? (next as (prev: FeedItem[]) => FeedItem[])(prevItems) : next;
-      personaFeedActions.replace(resolved);
-    },
-    [personaFeedActions]
-  );
-  const setHasMore = useCallback(
-    (next: boolean) => personaFeedActions.patch({ hasMore: Boolean(next) }),
-    [personaFeedActions]
-  );
-  const setLoading = useCallback(
-    (next: boolean) => {
-      if (next) {
-        personaFeedActions.start(false);
-        return;
-      }
-      personaFeedActions.patch({ loading: false, refreshing: false });
-    },
-    [personaFeedActions]
-  );
-  const setError = useCallback(
-    (next: string | null) => personaFeedActions.setError(next),
-    [personaFeedActions]
-  );
-
   const applyBuddyLearningFeedback = useCallback(
     (
       payload: any,
@@ -780,8 +752,7 @@ export default function PersonaFeedPage() {
   const fetchPage = useCallback(
     async (nextPage: number, replace = false) => {
       if (loading) return;
-      setLoading(true);
-      setError(null);
+      personaFeedActions.start(replace);
 
       try {
         const { res, json } = (await fetchPersonaFeedPage({
@@ -792,8 +763,7 @@ export default function PersonaFeedPage() {
 
         if (res.status === 401) {
           setNeedLogin(true);
-          setItems([]);
-          setHasMore(false);
+          personaFeedActions.replace([], { hasMore: false, offset: 0 });
           return;
         }
         if (!res.ok || !json) {
@@ -808,7 +778,7 @@ export default function PersonaFeedPage() {
           persistedOpenedIds.current.clear();
           setOpenedIds({});
           setExpandedReasonPostId(null);
-          setItems([]);
+          personaFeedActions.replace([], { hasMore: true, offset: 0 });
         }
 
         setNeedLogin(false);
@@ -868,33 +838,37 @@ export default function PersonaFeedPage() {
 
         const incoming = json.items ?? [];
         void hydrateOpenedState(incoming.map((x) => String(x?.id ?? "").trim()));
-        setItems((prev) => {
-          const base = replace ? [] : [...prev];
-          for (const p of incoming) {
-            if (!p?.id || ids.current.has(p.id)) continue;
-            if (hiddenIds.current.has(p.id)) continue;
-            ids.current.add(p.id);
-            base.push(p);
-          }
-          return base;
-        });
-
-        setHasMore(incoming.length === PAGE);
+        const accepted: FeedItem[] = [];
+        for (const p of incoming) {
+          if (!p?.id || ids.current.has(p.id)) continue;
+          if (hiddenIds.current.has(p.id)) continue;
+          ids.current.add(p.id);
+          accepted.push(p);
+        }
+        if (replace) {
+          personaFeedActions.replace(accepted, {
+            hasMore: incoming.length === PAGE,
+            offset: accepted.length,
+          });
+        } else {
+          personaFeedActions.append(accepted, {
+            hasMore: incoming.length === PAGE,
+            offset: itemsRef.current.length + accepted.length,
+          });
+        }
       } catch (e: any) {
-        setError(e?.message ?? "キャラ別タイムライン取得に失敗しました");
-      } finally {
-        setLoading(false);
+        personaFeedActions.fail(e?.message ?? "キャラ別タイムライン取得に失敗しました");
       }
     },
-    [hydrateOpenedState, loading, strategy]
+    [flushSkipEvents, hydrateOpenedState, loading, personaFeedActions, strategy]
   );
 
   useEffect(() => {
     flushSkipEvents();
     setPage(0);
-    setHasMore(true);
+    personaFeedActions.replace(itemsRef.current, { hasMore: true, offset: itemsRef.current.length });
     void fetchPage(0, true);
-  }, [fetchPage, flushSkipEvents, strategy]);
+  }, [fetchPage, flushSkipEvents, personaFeedActions, strategy]);
 
   useEffect(() => {
     itemsRef.current = items;
@@ -931,7 +905,7 @@ export default function PersonaFeedPage() {
   const hideItem = useCallback((p: FeedItem) => {
     hiddenIds.current.add(p.id);
     actionedIds.current.add(p.id);
-    setItems((prev) => prev.filter((x) => x.id !== p.id));
+    personaFeedActions.replace(itemsRef.current.filter((x) => x.id !== p.id));
     setExpandedReasonPostId((prev) => (prev === p.id ? null : prev));
     void postFeedback(p, "hide");
   }, [postFeedback]);
@@ -1154,12 +1128,12 @@ export default function PersonaFeedPage() {
       setBuddyLearningMode(normalizeBuddyLearningMode(json?.buddyLearningMode ?? nextMode));
       setBuddyLearningModeAvailable(Boolean(json?.available));
       setPage(0);
-      setHasMore(true);
+      personaFeedActions.replace(itemsRef.current, { hasMore: true, offset: itemsRef.current.length });
       void fetchPage(0, true);
     } catch {
       // keep local mode optimistically
       setPage(0);
-      setHasMore(true);
+      personaFeedActions.replace(itemsRef.current, { hasMore: true, offset: itemsRef.current.length });
       void fetchPage(0, true);
     } finally {
       setSavingBuddyLearningMode(false);

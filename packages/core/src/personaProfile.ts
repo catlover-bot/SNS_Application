@@ -21,6 +21,24 @@ export type PersonaProfile = {
   keywords: string[];
 };
 
+export type PersonaPostingGuide = {
+  summary: string;
+  recommendedFormats: Array<{
+    key: "normal" | "short" | "story";
+    label: string;
+    reason: string;
+  }>;
+  recommendedTimeBuckets: Array<{
+    key: "late_night" | "morning" | "daytime" | "evening";
+    label: string;
+    reason: string;
+  }>;
+  attachmentHints: string[];
+  hookExamples: string[];
+  cautionNotes: string[];
+  buddyStrategy: string;
+};
+
 function normalizeText(raw: string) {
   return raw.toLowerCase().replace(/\s+/g, " ").trim();
 }
@@ -155,5 +173,129 @@ export function buildPersonaProfile(input: PersonaProfileInput): PersonaProfile 
     hook,
     avoid,
     keywords,
+  };
+}
+
+export function buildPersonaPostingGuide(input: PersonaProfileInput): PersonaPostingGuide {
+  const profile = buildPersonaProfile(input);
+  const theme = String(input.theme ?? "").toLowerCase();
+  const keyText = normalizeText([input.key ?? "", input.title ?? "", ...(input.vibeTags ?? [])].join(" "));
+
+  const formatScores = new Map<"normal" | "short" | "story", number>([
+    ["normal", 0],
+    ["short", 0],
+    ["story", 0],
+  ]);
+  if (profile.directness === "direct") formatScores.set("short", (formatScores.get("short") ?? 0) + 2);
+  if (profile.empathy === "high") formatScores.set("story", (formatScores.get("story") ?? 0) + 2);
+  if (profile.energy === "high") formatScores.set("short", (formatScores.get("short") ?? 0) + 1.5);
+  if (profile.energy === "low") formatScores.set("normal", (formatScores.get("normal") ?? 0) + 1.5);
+  if (profile.humor === "high") formatScores.set("short", (formatScores.get("short") ?? 0) + 1);
+  if (theme === "logic") formatScores.set("normal", (formatScores.get("normal") ?? 0) + 2);
+  if (theme === "social") formatScores.set("story", (formatScores.get("story") ?? 0) + 1);
+  if (theme === "chaos") formatScores.set("short", (formatScores.get("short") ?? 0) + 1.5);
+
+  const formatReasons: Record<"normal" | "short" | "story", string> = {
+    normal:
+      profile.energy === "low" || theme === "logic"
+        ? "説明量を出しやすく、信頼・説得に向きます。"
+        : "文脈と温度感の両方を出しやすい基本フォーマットです。",
+    short:
+      profile.directness === "direct" || profile.energy === "high"
+        ? "結論先出し・勢いのある一言が刺さりやすいです。"
+        : "反応を取りにいく入口投稿として使いやすいです。",
+    story:
+      profile.empathy === "high"
+        ? "感情の流れや距離感を見せるのに相性が良いです。"
+        : "近況や舞台裏を軽く出して親近感を作れます。",
+  };
+
+  const recommendedFormats = Array.from(formatScores.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 2)
+    .map(([key]) => ({
+      key,
+      label: key === "normal" ? "通常投稿" : key === "short" ? "短尺投稿" : "Story",
+      reason: formatReasons[key],
+    }));
+
+  const timeScores = new Map<"late_night" | "morning" | "daytime" | "evening", number>([
+    ["late_night", 0],
+    ["morning", 0],
+    ["daytime", 0],
+    ["evening", 0],
+  ]);
+  if (profile.energy === "high") timeScores.set("evening", (timeScores.get("evening") ?? 0) + 2);
+  if (profile.energy === "high") timeScores.set("late_night", (timeScores.get("late_night") ?? 0) + 1);
+  if (profile.energy === "low") timeScores.set("morning", (timeScores.get("morning") ?? 0) + 1.5);
+  if (profile.directness === "direct") timeScores.set("daytime", (timeScores.get("daytime") ?? 0) + 1.2);
+  if (profile.empathy === "high") timeScores.set("evening", (timeScores.get("evening") ?? 0) + 1.2);
+  if (theme === "logic") timeScores.set("daytime", (timeScores.get("daytime") ?? 0) + 1.8);
+  if (theme === "social") timeScores.set("evening", (timeScores.get("evening") ?? 0) + 1.4);
+  if (theme === "chaos") timeScores.set("late_night", (timeScores.get("late_night") ?? 0) + 1.8);
+
+  const timeLabels = {
+    late_night: "深夜",
+    morning: "朝",
+    daytime: "昼",
+    evening: "夜",
+  } as const;
+  const timeReasons: Record<keyof typeof timeLabels, string> = {
+    late_night:
+      profile.energy === "high"
+        ? "テンション高め・短文系が自然に受け入れられやすい時間帯です。"
+        : "近況や本音を短く出すと反応が取りやすい時間帯です。",
+    morning: "丁寧な一言・段取り系の投稿が読みやすい時間帯です。",
+    daytime: "説明・比較・判断材料を含む投稿が機能しやすい時間帯です。",
+    evening: "会話・共感・雑談寄りの投稿が広がりやすい時間帯です。",
+  };
+  const recommendedTimeBuckets = Array.from(timeScores.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 2)
+    .map(([key]) => ({
+      key,
+      label: timeLabels[key],
+      reason: timeReasons[key],
+    }));
+
+  const attachmentHints = [
+    profile.directness === "direct" || theme === "logic"
+      ? "URL/根拠リンクを添えると信頼感を維持しやすい"
+      : "画像1枚で温度感を補うと刺さりやすい",
+    profile.humor === "high" || profile.energy === "high"
+      ? "短尺/動画を使う場合は一言のオチを先に置く"
+      : "画像やURLは本文の要点を1行で補足する",
+  ];
+
+  const hookExamples = [
+    `${profile.hook}`,
+    profile.directness === "direct"
+      ? "結論から言うと、今日はこれでいく。"
+      : profile.empathy === "high"
+        ? "それ分かる。先に気持ちだけ言うと…"
+        : "まず状況を1つだけ共有すると…",
+    keyText.includes("idol") || keyText.includes("stream") || keyText.includes("creator")
+      ? "一言リアクション + 次の行動を添える"
+      : "理由1つ + 質問1つで締める",
+  ];
+
+  const cautionNotes = Array.from(new Set(profile.avoid)).slice(0, 3);
+  const buddyStrategy =
+    profile.empathy === "high"
+      ? "相性キャラは“結論役”を合わせると会話が締まりやすい"
+      : profile.directness === "direct"
+        ? "相性キャラは“共感役”を合わせると反応率が安定しやすい"
+        : "相性キャラは“勢い役”を合わせると拡散寄りになりやすい";
+
+  return {
+    summary: `${recommendedFormats.map((x) => x.label).join(" / ")} を軸に、${recommendedTimeBuckets
+      .map((x) => x.label)
+      .join("・")}に出すと相性が出やすいキャラです。`,
+    recommendedFormats,
+    recommendedTimeBuckets,
+    attachmentHints,
+    hookExamples,
+    cautionNotes,
+    buddyStrategy,
   };
 }

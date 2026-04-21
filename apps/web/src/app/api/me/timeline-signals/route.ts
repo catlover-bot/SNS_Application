@@ -3,6 +3,7 @@ import {
   evolveTimelineSignalWeightsState,
   normalizeTimelineSignalWeights,
   type TimelineSignalLearningInput,
+  type TimelineSignalWeightsHistoryPoint,
 } from "@sns/core";
 import { supabaseServer } from "@/lib/supabase/server";
 
@@ -23,7 +24,7 @@ export async function GET() {
     );
   }
 
-  const [followsRes, savedCollectionsRes, fallbackSaveRes, openedRes, weightsRes] = await Promise.all([
+  const [followsRes, savedCollectionsRes, fallbackSaveRes, openedRes, weightsRes, historyRes] = await Promise.all([
     supa.from("follows").select("followee").eq("follower", user.id).limit(300),
     supa
       .from("user_saved_post_collections")
@@ -51,6 +52,14 @@ export async function GET() {
       )
       .eq("user_id", user.id)
       .maybeSingle(),
+    supa
+      .from("user_timeline_signal_weights_history")
+      .select(
+        "created_at,samples,opened_count,saved_count,followed_count,followed_author_boost,saved_post_boost,opened_penalty,interested_persona_boost,interested_author_boost,base_score_weight,predicted_buzz_weight,recency_weight"
+      )
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(24),
   ]);
 
   const followedAuthorIds = Array.from(
@@ -107,6 +116,9 @@ export async function GET() {
   const weightsMissing =
     Boolean(weightsRes.error) &&
     isMissingRelationError(weightsRes.error, "user_timeline_signal_weights");
+  const historyMissing =
+    Boolean(historyRes.error) &&
+    isMissingRelationError(historyRes.error, "user_timeline_signal_weights_history");
   const weights =
     !weightsRes.error && weightsRes.data
       ? normalizeTimelineSignalWeights({
@@ -120,6 +132,33 @@ export async function GET() {
           recencyWeight: Number((weightsRes.data as any).recency_weight ?? NaN),
         })
       : null;
+  const weightsHistory: TimelineSignalWeightsHistoryPoint[] | null =
+    !historyRes.error && Array.isArray(historyRes.data)
+      ? (historyRes.data as any[])
+          .map((row) => {
+            const at = String(row?.created_at ?? "").trim();
+            if (!at) return null;
+            return {
+              at,
+              samples: Math.max(0, Math.floor(Number(row?.samples ?? 0) || 0)),
+              openedCount: Math.max(0, Math.floor(Number(row?.opened_count ?? 0) || 0)),
+              savedCount: Math.max(0, Math.floor(Number(row?.saved_count ?? 0) || 0)),
+              followedCount: Math.max(0, Math.floor(Number(row?.followed_count ?? 0) || 0)),
+              weights: normalizeTimelineSignalWeights({
+                followedAuthorBoost: Number(row?.followed_author_boost ?? NaN),
+                savedPostBoost: Number(row?.saved_post_boost ?? NaN),
+                openedPenalty: Number(row?.opened_penalty ?? NaN),
+                interestedPersonaBoost: Number(row?.interested_persona_boost ?? NaN),
+                interestedAuthorBoost: Number(row?.interested_author_boost ?? NaN),
+                baseScoreWeight: Number(row?.base_score_weight ?? NaN),
+                predictedBuzzWeight: Number(row?.predicted_buzz_weight ?? NaN),
+                recencyWeight: Number(row?.recency_weight ?? NaN),
+              }),
+            } satisfies TimelineSignalWeightsHistoryPoint;
+          })
+          .filter(Boolean)
+          .reverse() as TimelineSignalWeightsHistoryPoint[]
+      : null;
 
   return NextResponse.json({
     followedAuthorIds,
@@ -130,6 +169,7 @@ export async function GET() {
       !weightsRes.error && weightsRes.data
         ? Math.max(0, Math.floor(Number((weightsRes.data as any).samples ?? 0) || 0))
         : null,
+    weightsHistory,
     learningInput:
       !weightsRes.error && weightsRes.data
         ? {
@@ -153,6 +193,7 @@ export async function GET() {
       ),
       openedStateMissing: openedDegraded,
       timelineWeightsMissing: weightsMissing,
+      timelineWeightsHistoryMissing: historyMissing,
     },
   });
 }
@@ -230,11 +271,51 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: upsertRes.error.message ?? "timeline_weights_upsert_failed" }, { status: 500 });
   }
 
+  const nowIso = new Date().toISOString();
+  const historyInsert = await supa.from("user_timeline_signal_weights_history").insert({
+    user_id: user.id,
+    followed_author_boost: evolved.weights.followedAuthorBoost,
+    saved_post_boost: evolved.weights.savedPostBoost,
+    opened_penalty: evolved.weights.openedPenalty,
+    interested_persona_boost: evolved.weights.interestedPersonaBoost,
+    interested_author_boost: evolved.weights.interestedAuthorBoost,
+    base_score_weight: evolved.weights.baseScoreWeight,
+    predicted_buzz_weight: evolved.weights.predictedBuzzWeight,
+    recency_weight: evolved.weights.recencyWeight,
+    opened_count: evolved.learningInput.openedCount,
+    saved_count: evolved.learningInput.savedCount,
+    followed_count: evolved.learningInput.followedCount,
+    samples: evolved.samples,
+    created_at: nowIso,
+  });
+  const historyMissing =
+    Boolean(historyInsert.error) &&
+    isMissingRelationError(historyInsert.error, "user_timeline_signal_weights_history");
+  if (historyInsert.error && !historyMissing) {
+    return NextResponse.json(
+      { error: historyInsert.error.message ?? "timeline_weights_history_insert_failed" },
+      { status: 500 }
+    );
+  }
+
+  const historyPoint: TimelineSignalWeightsHistoryPoint = {
+    at: nowIso,
+    samples: evolved.samples,
+    openedCount: evolved.learningInput.openedCount,
+    savedCount: evolved.learningInput.savedCount,
+    followedCount: evolved.learningInput.followedCount,
+    weights: evolved.weights,
+  };
+
   return NextResponse.json({
     ok: true,
     available: true,
     weights: evolved.weights,
     weightsSamples: evolved.samples,
+    weightsHistory: historyMissing ? null : [historyPoint],
     learningInput: evolved.learningInput,
+    degraded: {
+      timelineWeightsHistoryMissing: historyMissing,
+    },
   });
 }

@@ -1,12 +1,18 @@
 import { supabase } from "../supabase";
 import type {
   FeedPagePayload,
+  LieScoreLearnedContextCoefficient,
+  LieScoreLearnedContextHistoryPoint,
   NotificationsPayload,
   PageQuery,
   SavedCollectionsSummaryRowsPayload,
   SavedRowsPagePayload,
+  TimelineSignalWeightsHistoryPoint,
 } from "@sns/core";
-import type { TimelineSignalWeights } from "@sns/core";
+import {
+  evolveLieScoreLearnedContextCoefficient,
+  type TimelineSignalWeights,
+} from "@sns/core";
 
 type SavedCollectionRow = {
   post_id: string;
@@ -322,21 +328,73 @@ export async function fetchMobilePostsByIdsEnrichedFirst(postIds: string[]) {
 }
 
 export async function loadMobileTimelineSignalWeights(args: { userId: string }) {
-  const res = await supabase
-    .from("user_timeline_signal_weights")
-    .select(
-      "followed_author_boost,saved_post_boost,opened_penalty,interested_persona_boost,interested_author_boost,base_score_weight,predicted_buzz_weight,recency_weight,samples,opened_count,saved_count,followed_count"
-    )
-    .eq("user_id", args.userId)
-    .maybeSingle();
+  const [res, historyRes] = await Promise.all([
+    supabase
+      .from("user_timeline_signal_weights")
+      .select(
+        "followed_author_boost,saved_post_boost,opened_penalty,interested_persona_boost,interested_author_boost,base_score_weight,predicted_buzz_weight,recency_weight,samples,opened_count,saved_count,followed_count"
+      )
+      .eq("user_id", args.userId)
+      .maybeSingle(),
+    supabase
+      .from("user_timeline_signal_weights_history")
+      .select(
+        "created_at,samples,opened_count,saved_count,followed_count,followed_author_boost,saved_post_boost,opened_penalty,interested_persona_boost,interested_author_boost,base_score_weight,predicted_buzz_weight,recency_weight"
+      )
+      .eq("user_id", args.userId)
+      .order("created_at", { ascending: false })
+      .limit(24),
+  ]);
   if (res.error) {
     if (isMissingRelationErrorLike(res.error, "user_timeline_signal_weights")) {
-      return { available: false, weights: null, samples: 0, learningInput: null } as const;
+      return {
+        available: false,
+        weights: null,
+        samples: 0,
+        learningInput: null,
+        historyPoints: [] as TimelineSignalWeightsHistoryPoint[],
+      } as const;
     }
     throw res.error;
   }
+  const historyPointsRaw =
+    historyRes.error && isMissingRelationErrorLike(historyRes.error, "user_timeline_signal_weights_history")
+      ? []
+      : historyRes.error
+        ? []
+        : ((historyRes.data ?? []) as any[]);
+  const historyPoints: TimelineSignalWeightsHistoryPoint[] = historyPointsRaw
+    .map((row) => {
+      const at = String(row?.created_at ?? "").trim();
+      if (!at) return null;
+      return {
+        at,
+        samples: Math.max(0, Math.floor(Number(row?.samples ?? 0) || 0)),
+        openedCount: Math.max(0, Math.floor(Number(row?.opened_count ?? 0) || 0)),
+        savedCount: Math.max(0, Math.floor(Number(row?.saved_count ?? 0) || 0)),
+        followedCount: Math.max(0, Math.floor(Number(row?.followed_count ?? 0) || 0)),
+        weights: {
+          followedAuthorBoost: Number(row?.followed_author_boost ?? 0.28) || 0.28,
+          savedPostBoost: Number(row?.saved_post_boost ?? 0.34) || 0.34,
+          openedPenalty: Number(row?.opened_penalty ?? 0.16) || 0.16,
+          interestedPersonaBoost: Number(row?.interested_persona_boost ?? 0.17) || 0.17,
+          interestedAuthorBoost: Number(row?.interested_author_boost ?? 0.2) || 0.2,
+          baseScoreWeight: Number(row?.base_score_weight ?? 0.38) || 0.38,
+          predictedBuzzWeight: Number(row?.predicted_buzz_weight ?? 0.26) || 0.26,
+          recencyWeight: Number(row?.recency_weight ?? 0.14) || 0.14,
+        },
+      } as TimelineSignalWeightsHistoryPoint;
+    })
+    .filter(Boolean)
+    .reverse() as TimelineSignalWeightsHistoryPoint[];
   if (!res.data) {
-    return { available: true, weights: null, samples: 0, learningInput: null } as const;
+    return {
+      available: true,
+      weights: null,
+      samples: 0,
+      learningInput: null,
+      historyPoints,
+    } as const;
   }
   const d: any = res.data;
   const weights: TimelineSignalWeights = {
@@ -353,6 +411,7 @@ export async function loadMobileTimelineSignalWeights(args: { userId: string }) 
     available: true,
     weights,
     samples: Math.max(0, Math.floor(Number(d.samples ?? 0) || 0)),
+    historyPoints,
     learningInput: {
       openedCount: Math.max(0, Math.floor(Number(d.opened_count ?? 0) || 0)),
       savedCount: Math.max(0, Math.floor(Number(d.saved_count ?? 0) || 0)),
@@ -371,6 +430,7 @@ export async function upsertMobileTimelineSignalWeights(args: {
     followedCount?: number;
   };
 }) {
+  const nowIso = new Date().toISOString();
   const { error } = await supabase.from("user_timeline_signal_weights").upsert(
     {
       user_id: args.userId,
@@ -386,15 +446,243 @@ export async function upsertMobileTimelineSignalWeights(args: {
       saved_count: Math.max(0, Math.floor(Number(args.learningInput.savedCount ?? 0) || 0)),
       followed_count: Math.max(0, Math.floor(Number(args.learningInput.followedCount ?? 0) || 0)),
       samples: Math.max(0, Math.floor(Number(args.samples ?? 0) || 0)),
-      updated_at: new Date().toISOString(),
+      updated_at: nowIso,
     },
     { onConflict: "user_id" }
   );
   if (error) {
     if (isMissingRelationErrorLike(error, "user_timeline_signal_weights")) {
-      return { available: false } as const;
+      return { available: false, historyPoint: null } as const;
     }
     throw error;
   }
-  return { available: true } as const;
+
+  const historyInsert = await supabase.from("user_timeline_signal_weights_history").insert({
+    user_id: args.userId,
+    followed_author_boost: args.weights.followedAuthorBoost,
+    saved_post_boost: args.weights.savedPostBoost,
+    opened_penalty: args.weights.openedPenalty,
+    interested_persona_boost: args.weights.interestedPersonaBoost,
+    interested_author_boost: args.weights.interestedAuthorBoost,
+    base_score_weight: args.weights.baseScoreWeight,
+    predicted_buzz_weight: args.weights.predictedBuzzWeight,
+    recency_weight: args.weights.recencyWeight,
+    opened_count: Math.max(0, Math.floor(Number(args.learningInput.openedCount ?? 0) || 0)),
+    saved_count: Math.max(0, Math.floor(Number(args.learningInput.savedCount ?? 0) || 0)),
+    followed_count: Math.max(0, Math.floor(Number(args.learningInput.followedCount ?? 0) || 0)),
+    samples: Math.max(0, Math.floor(Number(args.samples ?? 0) || 0)),
+    created_at: nowIso,
+  });
+  if (historyInsert.error && !isMissingRelationErrorLike(historyInsert.error, "user_timeline_signal_weights_history")) {
+    throw historyInsert.error;
+  }
+  return {
+    available: true,
+    historyPoint:
+      historyInsert.error && isMissingRelationErrorLike(historyInsert.error, "user_timeline_signal_weights_history")
+        ? null
+        : ({
+            at: nowIso,
+            samples: Math.max(0, Math.floor(Number(args.samples ?? 0) || 0)),
+            openedCount: Math.max(0, Math.floor(Number(args.learningInput.openedCount ?? 0) || 0)),
+            savedCount: Math.max(0, Math.floor(Number(args.learningInput.savedCount ?? 0) || 0)),
+            followedCount: Math.max(0, Math.floor(Number(args.learningInput.followedCount ?? 0) || 0)),
+            weights: args.weights,
+          } as TimelineSignalWeightsHistoryPoint),
+  } as const;
+}
+
+export async function loadMobileLieScoreContextCoefficient(args: {
+  userId: string;
+  contextKey: string;
+}) {
+  const userId = String(args.userId ?? "").trim();
+  const contextKey = String(args.contextKey ?? "").trim();
+  if (!userId || !contextKey) return { available: true, row: null } as const;
+  const res = await supabase
+    .from("user_lie_score_context_coefficients")
+    .select(
+      "user_id,context_key,weekday_time_bucket,persona_key,attachment_mix_key,adjustment_bias,confidence,samples,updated_at"
+    )
+    .eq("user_id", userId)
+    .eq("context_key", contextKey)
+    .maybeSingle();
+  if (res.error) {
+    if (isMissingRelationErrorLike(res.error, "user_lie_score_context_coefficients")) {
+      return { available: false, row: null } as const;
+    }
+    throw res.error;
+  }
+  if (!res.data) return { available: true, row: null } as const;
+  const d: any = res.data;
+  const row: LieScoreLearnedContextCoefficient & {
+    weekdayTimeBucket?: string | null;
+    personaKey?: string | null;
+    attachmentMixKey?: string | null;
+  } = {
+    contextKey: String(d.context_key ?? contextKey),
+    adjustmentBias: Number(d.adjustment_bias ?? 0) || 0,
+    confidence: Number(d.confidence ?? 0) || 0,
+    samples: Math.max(0, Math.floor(Number(d.samples ?? 0) || 0)),
+    updatedAt: d.updated_at ?? null,
+    weekdayTimeBucket: d.weekday_time_bucket ?? null,
+    personaKey: d.persona_key ?? null,
+    attachmentMixKey: d.attachment_mix_key ?? null,
+  };
+  return { available: true, row } as const;
+}
+
+export async function loadMobileLieScoreContextCoefficientHistory(args: {
+  userId: string;
+  contextKey: string;
+  limit?: number;
+}) {
+  const userId = String(args.userId ?? "").trim();
+  const contextKey = String(args.contextKey ?? "").trim();
+  const limit = Math.max(1, Math.min(48, Math.floor(Number(args.limit ?? 16) || 16)));
+  if (!userId || !contextKey) return { available: true, points: [] as LieScoreLearnedContextHistoryPoint[] } as const;
+  const res = await supabase
+    .from("user_lie_score_context_coefficient_history")
+    .select("created_at,adjustment_bias,confidence,samples")
+    .eq("user_id", userId)
+    .eq("context_key", contextKey)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (res.error) {
+    if (isMissingRelationErrorLike(res.error, "user_lie_score_context_coefficient_history")) {
+      return { available: false, points: [] as LieScoreLearnedContextHistoryPoint[] } as const;
+    }
+    throw res.error;
+  }
+  const points = ((res.data ?? []) as any[])
+    .map((row) => {
+      const at = String(row?.created_at ?? "").trim();
+      if (!at) return null;
+      return {
+        at,
+        adjustmentBias: Number(row?.adjustment_bias ?? 0) || 0,
+        confidence: Math.max(0, Math.min(1, Number(row?.confidence ?? 0) || 0)),
+        samples: Math.max(0, Math.floor(Number(row?.samples ?? 0) || 0)),
+      } satisfies LieScoreLearnedContextHistoryPoint;
+    })
+    .filter(Boolean)
+    .reverse() as LieScoreLearnedContextHistoryPoint[];
+  return { available: true, points } as const;
+}
+
+export async function loadMobileLieScoreContextCoefficientHistoryDaily(args: {
+  userId: string;
+  contextKey: string;
+  limit?: number;
+}) {
+  const userId = String(args.userId ?? "").trim();
+  const contextKey = String(args.contextKey ?? "").trim();
+  const limit = Math.max(1, Math.min(120, Math.floor(Number(args.limit ?? 60) || 60)));
+  if (!userId || !contextKey) return { available: true, points: [] as LieScoreLearnedContextHistoryPoint[] } as const;
+  const res = await supabase
+    .from("user_lie_score_context_coefficient_history_daily")
+    .select("day,avg_adjustment_bias,avg_confidence,points")
+    .eq("user_id", userId)
+    .eq("context_key", contextKey)
+    .order("day", { ascending: false })
+    .limit(limit);
+  if (res.error) {
+    if (isMissingRelationErrorLike(res.error, "user_lie_score_context_coefficient_history_daily")) {
+      return { available: false, points: [] as LieScoreLearnedContextHistoryPoint[] } as const;
+    }
+    throw res.error;
+  }
+  const points = ((res.data ?? []) as any[])
+    .map((row) => {
+      const day = String(row?.day ?? "").trim();
+      if (!day) return null;
+      return {
+        at: `${day}T00:00:00.000Z`,
+        adjustmentBias: Number(row?.avg_adjustment_bias ?? 0) || 0,
+        confidence: Math.max(0, Math.min(1, Number(row?.avg_confidence ?? 0) || 0)),
+        samples: Math.max(0, Math.floor(Number(row?.points ?? 0) || 0)),
+      } satisfies LieScoreLearnedContextHistoryPoint;
+    })
+    .filter(Boolean)
+    .reverse() as LieScoreLearnedContextHistoryPoint[];
+  return { available: true, points } as const;
+}
+
+export async function upsertMobileLieScoreContextCoefficientObservation(args: {
+  userId: string;
+  contextKey: string;
+  weekdayTimeBucket: string;
+  personaKey: string;
+  attachmentMixKey: string;
+  observation: {
+    targetBias: number;
+    confidence: number;
+    sampleIncrement?: number;
+  };
+}) {
+  const userId = String(args.userId ?? "").trim();
+  const contextKey = String(args.contextKey ?? "").trim();
+  if (!userId || !contextKey) return { available: true, row: null, historyPoint: null } as const;
+  const existing = await loadMobileLieScoreContextCoefficient({ userId, contextKey });
+  if (existing.available === false) return { available: false, row: null, historyPoint: null } as const;
+  const next = evolveLieScoreLearnedContextCoefficient({
+    current: existing.row,
+    observation: args.observation,
+  });
+  const nowIso = new Date().toISOString();
+  const upsertRes = await supabase.from("user_lie_score_context_coefficients").upsert(
+    {
+      user_id: userId,
+      context_key: contextKey,
+      weekday_time_bucket: String(args.weekdayTimeBucket ?? "").trim() || null,
+      persona_key: String(args.personaKey ?? "").trim() || "global",
+      attachment_mix_key: String(args.attachmentMixKey ?? "").trim() || "none",
+      adjustment_bias: next.adjustmentBias,
+      confidence: next.confidence,
+      samples: next.samples,
+      updated_at: nowIso,
+    },
+    { onConflict: "user_id,context_key" }
+  );
+  if (upsertRes.error) {
+    if (isMissingRelationErrorLike(upsertRes.error, "user_lie_score_context_coefficients")) {
+      return { available: false, row: null, historyPoint: null } as const;
+    }
+    throw upsertRes.error;
+  }
+  const historyInsert = await supabase.from("user_lie_score_context_coefficient_history").insert({
+    user_id: userId,
+    context_key: contextKey,
+    weekday_time_bucket: String(args.weekdayTimeBucket ?? "").trim() || null,
+    persona_key: String(args.personaKey ?? "").trim() || "global",
+    attachment_mix_key: String(args.attachmentMixKey ?? "").trim() || "none",
+    adjustment_bias: next.adjustmentBias,
+    confidence: next.confidence,
+    samples: next.samples,
+    created_at: nowIso,
+  });
+  const historyMissing =
+    Boolean(historyInsert.error) &&
+    isMissingRelationErrorLike(historyInsert.error, "user_lie_score_context_coefficient_history");
+  if (historyInsert.error && !historyMissing) {
+    throw historyInsert.error;
+  }
+  return {
+    available: true,
+    row: {
+      contextKey,
+      adjustmentBias: next.adjustmentBias,
+      confidence: next.confidence,
+      samples: next.samples,
+      updatedAt: nowIso,
+    } satisfies LieScoreLearnedContextCoefficient,
+    historyPoint: historyMissing
+      ? null
+      : ({
+          at: nowIso,
+          adjustmentBias: next.adjustmentBias,
+          confidence: next.confidence,
+          samples: next.samples,
+        } satisfies LieScoreLearnedContextHistoryPoint),
+  } as const;
 }

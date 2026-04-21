@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import Image from "next/image";
-import { buildPersonaProfile } from "@sns/core";
+import { buildPersonaPostingGuide, buildPersonaProfile } from "@sns/core";
 
 type PersonaDetail = {
   key: string;
@@ -300,6 +300,27 @@ export default function PersonaDetailPage() {
       personaKey,
     ]
   );
+  const postingGuide = useMemo(
+    () =>
+      buildPersonaPostingGuide({
+        key: personaKey,
+        title: persona?.title ?? personaKey,
+        theme: persona?.theme ?? null,
+        blurb: persona?.blurb ?? null,
+        talkStyle: persona?.talk_style ?? null,
+        relationStyle: persona?.relation_style ?? null,
+        vibeTags: persona?.vibe_tags ?? [],
+      }),
+    [
+      persona?.blurb,
+      persona?.relation_style,
+      persona?.talk_style,
+      persona?.theme,
+      persona?.title,
+      persona?.vibe_tags,
+      personaKey,
+    ]
+  );
 
   return (
     <div className="space-y-6">
@@ -392,6 +413,52 @@ export default function PersonaDetailPage() {
             >
               注意: {x}
             </span>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-2xl border bg-white/90 px-4 py-3 sm:px-6 sm:py-4 space-y-3">
+        <div className="text-xs font-semibold text-sky-700">キャラ運用ガイド</div>
+        <p className="text-sm text-slate-700">{postingGuide.summary}</p>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-2 rounded-xl border bg-slate-50 p-3">
+            <div className="text-xs font-semibold text-slate-600">おすすめフォーマット</div>
+            {postingGuide.recommendedFormats.map((f) => (
+              <div key={f.key} className="rounded-lg border bg-white p-2">
+                <div className="text-xs font-semibold text-slate-800">{f.label}</div>
+                <div className="text-[11px] text-slate-600">{f.reason}</div>
+              </div>
+            ))}
+          </div>
+          <div className="space-y-2 rounded-xl border bg-slate-50 p-3">
+            <div className="text-xs font-semibold text-slate-600">おすすめ時間帯</div>
+            {postingGuide.recommendedTimeBuckets.map((t) => (
+              <div key={t.key} className="rounded-lg border bg-white p-2">
+                <div className="text-xs font-semibold text-slate-800">{t.label}</div>
+                <div className="text-[11px] text-slate-600">{t.reason}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {postingGuide.attachmentHints.slice(0, 3).map((hint) => (
+            <span
+              key={hint}
+              className="inline-flex items-center rounded-full border border-cyan-200 bg-cyan-50 px-2 py-0.5 text-[11px] text-cyan-800"
+            >
+              添付ヒント: {hint}
+            </span>
+          ))}
+          <span className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] text-indigo-800">
+            相性の使い方: {postingGuide.buddyStrategy}
+          </span>
+        </div>
+        <div className="space-y-1">
+          <div className="text-xs font-semibold text-slate-600">書き出し例</div>
+          {postingGuide.hookExamples.slice(0, 3).map((hook) => (
+            <div key={hook} className="text-xs text-slate-700 rounded-lg border bg-slate-50 px-2 py-1">
+              {hook}
+            </div>
           ))}
         </div>
       </section>

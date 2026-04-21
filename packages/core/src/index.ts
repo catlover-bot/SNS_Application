@@ -5,4 +5,5 @@ export * from "./socialUi";
 export * from "./socialDataContracts";
 export * from "./timelineHighlights";
 export * from "./timelineRanking";
+export * from "./timelineLearningUi";
 export * from "./asyncListState";

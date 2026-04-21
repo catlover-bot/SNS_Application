@@ -1,3 +1,5 @@
+import type { TimelineSignalWeights } from "./timelineRanking";
+
 export type PageQuery = {
   limit: number;
   offset: number;
@@ -47,6 +49,7 @@ export type TimelineSignalsPayload = {
   openedPostIds: string[];
   weights?: TimelineSignalWeights | null;
   weightsSamples?: number | null;
+  weightsHistory?: TimelineSignalWeightsHistoryPoint[] | null;
   learningInput?: {
     openedCount?: number;
     savedCount?: number;
@@ -54,4 +57,12 @@ export type TimelineSignalsPayload = {
   } | null;
   degraded?: Record<string, boolean>;
 };
-import type { TimelineSignalWeights } from "./timelineRanking";
+
+export type TimelineSignalWeightsHistoryPoint = {
+  at: string;
+  samples: number;
+  openedCount?: number;
+  savedCount?: number;
+  followedCount?: number;
+  weights: TimelineSignalWeights;
+};
