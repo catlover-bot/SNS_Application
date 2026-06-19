@@ -51,23 +51,6 @@ type DialogueResponse = {
   meta?: DialogueMeta;
 };
 
-type PersonaImageCoverageItem = {
-  key: string;
-  title: string;
-  has_static_image: boolean;
-  static_image: string | null;
-  api_image: string;
-};
-
-type PersonaImageCoverageResponse = {
-  ok: boolean;
-  total: number;
-  static_count: number;
-  fallback_count: number;
-  coverage_pct: number;
-  items: PersonaImageCoverageItem[];
-};
-
 function clampPct(v: number) {
   const n = Number(v);
   if (!Number.isFinite(n)) return 0;
@@ -128,10 +111,6 @@ export default function PersonaLabPage() {
   const [dialogueDrafts, setDialogueDrafts] = useState<string[]>([]);
   const [dialogueMeta, setDialogueMeta] = useState<DialogueMeta | null>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
-  const [coverageLoading, setCoverageLoading] = useState(false);
-  const [coverageError, setCoverageError] = useState<string | null>(null);
-  const [coverage, setCoverage] = useState<PersonaImageCoverageResponse | null>(null);
-
   useEffect(() => {
     let stop = false;
     (async () => {
@@ -140,13 +119,13 @@ export default function PersonaLabPage() {
       try {
         const res = await fetch("/api/personas", { cache: "no-store" });
         const json = await res.json().catch(() => null);
-        if (!res.ok) throw new Error(json?.error ?? "キャラ一覧の取得に失敗しました");
+        if (!res.ok) throw new Error("キャラ一覧の取得に失敗しました");
         const rows = (Array.isArray(json) ? json : []) as PersonaItem[];
         if (stop) return;
         setPersonas(rows);
         if (rows.length > 0) setSourceKey(rows[0].key);
       } catch (e: any) {
-        if (!stop) setListError(e?.message ?? "キャラ一覧の取得に失敗しました");
+        if (!stop) setListError("キャラ一覧を読み込めませんでした。時間をおいて再度お試しください。");
       } finally {
         if (!stop) setListLoading(false);
       }
@@ -154,28 +133,6 @@ export default function PersonaLabPage() {
     return () => {
       stop = true;
     };
-  }, []);
-
-  async function loadImageCoverage() {
-    setCoverageLoading(true);
-    setCoverageError(null);
-    try {
-      const res = await fetch("/api/personas/image-coverage", { cache: "no-store" });
-      const json = (await res.json().catch(() => null)) as PersonaImageCoverageResponse | null;
-      if (!res.ok || !json?.ok) {
-        throw new Error((json as any)?.error ?? "画像カバレッジの取得に失敗しました");
-      }
-      setCoverage(json);
-    } catch (e: any) {
-      setCoverageError(e?.message ?? "画像カバレッジの取得に失敗しました");
-      setCoverage(null);
-    } finally {
-      setCoverageLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    void loadImageCoverage();
   }, []);
 
   useEffect(() => {
@@ -194,7 +151,7 @@ export default function PersonaLabPage() {
           cache: "no-store",
         });
         const json = await res.json().catch(() => null);
-        if (!res.ok) throw new Error(json?.error ?? "相性データ取得に失敗しました");
+        if (!res.ok) throw new Error("相性データ取得に失敗しました");
         const rows = (json?.items ?? []) as CompatItem[];
         if (stop) return;
         setCompatItems(rows);
@@ -208,7 +165,7 @@ export default function PersonaLabPage() {
         }
       } catch (e: any) {
         if (!stop) {
-          setCompatError(e?.message ?? "相性データ取得に失敗しました");
+          setCompatError("相性データを読み込めませんでした。キャラを選び直してお試しください。");
           setCompatItems([]);
           setTargetKey("");
         }
@@ -288,7 +245,7 @@ export default function PersonaLabPage() {
       });
       const json = (await res.json().catch(() => null)) as DialogueResponse | null;
       if (!res.ok || !json) {
-        throw new Error((json as any)?.error ?? "返信草案の生成に失敗しました");
+        throw new Error("返信草案の生成に失敗しました");
       }
       setDialogueDrafts(
         (Array.isArray(json.drafts) ? json.drafts : [])
@@ -305,7 +262,7 @@ export default function PersonaLabPage() {
       );
       setDialogueMeta(json.meta ?? null);
     } catch (e: any) {
-      setDialogueError(e?.message ?? "返信草案の生成に失敗しました");
+      setDialogueError("返信草案を生成できませんでした。文脈を短くしてもう一度お試しください。");
       setDialogueDrafts([]);
       setDialogueTips([]);
       setDialogueMeta(null);
@@ -318,10 +275,16 @@ export default function PersonaLabPage() {
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-6">
       <header className="space-y-2">
-        <h1 className="text-2xl font-bold">キャラ相性ラボ</h1>
-        <p className="text-sm opacity-70">
-          キャラの組み合わせを試し、相性の根拠と会話スターターをすぐ作れます。
-        </p>
+        <div className="rounded-xl border bg-white p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+            Persona Compatibility
+          </div>
+          <h1 className="mt-1 text-2xl font-bold">キャラ相性ラボ</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            キャラ同士の相性を比べて、会話の入り方や返信草案を作れます。
+            投稿から育ったあなたのキャラを、次の交流につなげるための実験室です。
+          </p>
+        </div>
       </header>
 
       <section className="rounded-xl border bg-white p-4 space-y-4">
@@ -371,15 +334,15 @@ export default function PersonaLabPage() {
           </label>
         </div>
 
-        {listError && <div className="text-sm text-red-600">{listError}</div>}
-        {compatError && <div className="text-sm text-red-600">{compatError}</div>}
+        {listError && <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{listError}</div>}
+        {compatError && <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{compatError}</div>}
       </section>
 
       {compatLoading ? (
-        <section className="rounded-xl border bg-white p-6 text-sm opacity-70">相性を計算中…</section>
+        <section className="rounded-xl border bg-white p-6 text-sm text-slate-500">相性を計算中…</section>
       ) : !selectedCompat ? (
-        <section className="rounded-xl border bg-white p-6 text-sm opacity-70">
-          相性データが見つかりません。
+        <section className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-600">
+          相性データがまだありません。別のキャラを選ぶか、キャラ図鑑から気になるタイプを探してみてください。
         </section>
       ) : (
         <section className="grid lg:grid-cols-2 gap-4">
@@ -543,7 +506,7 @@ export default function PersonaLabPage() {
               ) : null}
               {dialogueMeta?.score != null ? (
                 <span className="px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200">
-                  score {clampPct(dialogueMeta.score)}%
+                  相性 {clampPct(dialogueMeta.score)}%
                 </span>
               ) : null}
             </div>
@@ -617,65 +580,14 @@ export default function PersonaLabPage() {
         )}
       </section>
 
-      <section className="rounded-xl border bg-white p-4 space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-sm font-medium">キャラ画像カバレッジ</div>
-            <div className="text-xs opacity-70">静的画像の不足は自動生成フォールバックで補完されます。</div>
-          </div>
-          <button
-            type="button"
-            onClick={() => void loadImageCoverage()}
-            disabled={coverageLoading}
-            className="px-3 py-1.5 rounded border bg-white text-sm disabled:opacity-60"
-          >
-            {coverageLoading ? "更新中…" : "更新"}
-          </button>
-        </div>
-
-        {coverageError ? <div className="text-sm text-red-600">{coverageError}</div> : null}
-        {!coverage ? (
-          <div className="text-sm opacity-70">読み込み中…</div>
-        ) : (
-          <>
-            <div className="grid md:grid-cols-4 gap-2">
-              <div className="rounded border bg-gray-50 p-2 text-sm">
-                総キャラ: <span className="font-semibold">{coverage.total}</span>
-              </div>
-              <div className="rounded border bg-gray-50 p-2 text-sm">
-                静的画像: <span className="font-semibold">{coverage.static_count}</span>
-              </div>
-              <div className="rounded border bg-gray-50 p-2 text-sm">
-                フォールバック: <span className="font-semibold">{coverage.fallback_count}</span>
-              </div>
-              <div className="rounded border bg-gray-50 p-2 text-sm">
-                静的率: <span className="font-semibold">{coverage.coverage_pct}%</span>
-              </div>
-            </div>
-
-            {coverage.fallback_count > 0 ? (
-              <div className="space-y-2">
-                <div className="text-xs opacity-70">静的画像が未配置のキャラ（先頭20件）</div>
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {coverage.items
-                    .filter((x) => !x.has_static_image)
-                    .slice(0, 20)
-                    .map((x) => (
-                      <div key={x.key} className="rounded border bg-gray-50 p-2 text-sm space-y-1">
-                        <div className="font-medium">{x.title}</div>
-                        <div className="text-xs opacity-70">@{x.key}</div>
-                        <a className="text-xs underline" href={x.api_image} target="_blank" rel="noreferrer">
-                          自動生成画像を確認
-                        </a>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            ) : (
-              <div className="text-sm text-emerald-700">全キャラに静的画像が割り当て済みです。</div>
-            )}
-          </>
-        )}
+      <section className="rounded-xl border bg-white p-4">
+        <div className="text-sm font-medium">もっとキャラを探す</div>
+        <p className="mt-1 text-sm text-slate-600">
+          相性を試したいキャラが見つからないときは、図鑑から雰囲気や説明を眺めて選べます。
+        </p>
+        <a href="/personas" className="mt-3 inline-flex rounded-full border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50">
+          キャラ図鑑へ
+        </a>
       </section>
     </div>
   );

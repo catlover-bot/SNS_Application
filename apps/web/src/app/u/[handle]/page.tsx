@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { supabaseClient as getSupabase } from "@/lib/supabase/client";
 import FollowButton from "@/components/FollowButton";
 import PostCard from "@/components/PostCard";
@@ -17,8 +18,9 @@ type Profile = {
 };
 
 export default function UserPage() {
+  const configured = isSupabaseConfigured();
   // ✅ Supabase クライアントは 1 回だけ生成
-  const supabase = useMemo(() => getSupabase(), []);
+  const supabase = useMemo(() => (configured ? getSupabase() : null), [configured]);
 
   const params = useParams();
   // useParams() は string | string[] の可能性があるのでガード
@@ -38,14 +40,21 @@ export default function UserPage() {
   const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [serviceUnavailable, setServiceUnavailable] = useState(false);
 
   useEffect(() => {
     if (!handle) return;
+    if (!supabase) {
+      setLoading(false);
+      setServiceUnavailable(true);
+      return;
+    }
     let alive = true;
 
     (async () => {
       setLoading(true);
       setNotFound(false);
+      setServiceUnavailable(false);
 
       // プロフィール取得
       const p = await supabase
@@ -93,6 +102,14 @@ export default function UserPage() {
     return (
       <div className="p-6 opacity-70">
         @{handle} のページを読み込み中…
+      </div>
+    );
+  }
+
+  if (serviceUnavailable) {
+    return (
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
+        データサービスの設定が完了していないため、プロフィールを読み込めません。
       </div>
     );
   }

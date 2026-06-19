@@ -5,6 +5,7 @@ import {
   type TimelineSignalLearningInput,
   type TimelineSignalWeightsHistoryPoint,
 } from "@sns/core";
+import { safeJsonError } from "@/lib/apiSecurity";
 import { supabaseServer } from "@/lib/supabase/server";
 
 function isMissingRelationError(err: any, relation: string) {
@@ -102,15 +103,11 @@ export async function GET() {
   } else if (isMissingRelationError(openedRes.error, "user_post_open_state")) {
     openedDegraded = true;
   } else {
-    return NextResponse.json(
-      {
-        error: openedRes.error.message ?? "timeline_signals_failed",
-        followedAuthorIds: [],
-        savedPostIds: [],
-        openedPostIds: [],
-      },
-      { status: 500 }
-    );
+    return safeJsonError("timeline_signals_unavailable", 500, {
+      followedAuthorIds: [],
+      savedPostIds: [],
+      openedPostIds: [],
+    });
   }
 
   const weightsMissing =
@@ -227,7 +224,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, available: false, error: "timeline_weights_table_missing" });
   }
   if (existing.error) {
-    return NextResponse.json({ error: existing.error.message ?? "timeline_weights_load_failed" }, { status: 500 });
+    return safeJsonError("timeline_weights_unavailable", 500);
   }
 
   const evolved = evolveTimelineSignalWeightsState({
@@ -268,7 +265,7 @@ export async function POST(req: Request) {
   );
 
   if (upsertRes.error) {
-    return NextResponse.json({ error: upsertRes.error.message ?? "timeline_weights_upsert_failed" }, { status: 500 });
+    return safeJsonError("timeline_weights_save_failed", 500);
   }
 
   const nowIso = new Date().toISOString();
@@ -292,10 +289,7 @@ export async function POST(req: Request) {
     Boolean(historyInsert.error) &&
     isMissingRelationError(historyInsert.error, "user_timeline_signal_weights_history");
   if (historyInsert.error && !historyMissing) {
-    return NextResponse.json(
-      { error: historyInsert.error.message ?? "timeline_weights_history_insert_failed" },
-      { status: 500 }
-    );
+    return safeJsonError("timeline_weights_history_failed", 500);
   }
 
   const historyPoint: TimelineSignalWeightsHistoryPoint = {

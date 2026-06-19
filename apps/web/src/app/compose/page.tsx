@@ -10,6 +10,7 @@ import {
   computeLieScore,
 } from "@sns/core";
 import { supabaseClient as supabase } from "@/lib/supabase/client";
+import SignedInDemoGuide from "@/components/SignedInDemoGuide";
 
 type AnalysisFlags = {
   noExif?: boolean;
@@ -152,6 +153,10 @@ type PostPerformanceResponse = {
 };
 
 const LIMIT = 280;
+const COMPOSE_SAVE_ERROR =
+  "投稿を保存できませんでした。少し時間をおいてから、もう一度お試しください。";
+const MEDIA_UPLOAD_ERROR =
+  "画像をアップロードできませんでした。画像を外して投稿するか、時間をおいて再度お試しください。";
 
 function toCompatPercent(v: number | null | undefined) {
   const n = Number(v ?? 0);
@@ -198,6 +203,7 @@ export default function Compose() {
   const [preview, setPreview] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [posting, setPosting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [personaLoading, setPersonaLoading] = useState(false);
   const [personaError, setPersonaError] = useState<string | null>(null);
   const [personaCandidates, setPersonaCandidates] = useState<PersonaSuggestion[]>([]);
@@ -223,6 +229,7 @@ export default function Compose() {
   } | null>(null);
   const [composeFormatMode, setComposeFormatMode] = useState<ComposeFormatMode>("post");
   const [lastPostedPostId, setLastPostedPostId] = useState<string | null>(null);
+  const [lastPostedNotice, setLastPostedNotice] = useState<string | null>(null);
   const [lastPostedPerformance, setLastPostedPerformance] = useState<PostPerformanceResponse | null>(null);
   const [lastPostedPerformanceLoading, setLastPostedPerformanceLoading] = useState(false);
   const [lastPostedPerformanceError, setLastPostedPerformanceError] = useState<string | null>(null);
@@ -389,7 +396,7 @@ export default function Compose() {
         });
         const json = await res.json().catch(() => null);
         if (!res.ok || !json) {
-          throw new Error(json?.error ?? "キャラ候補の取得に失敗しました");
+          throw new Error("キャラ候補の取得に失敗しました");
         }
         if (stop) return;
         const items = (json.items ?? []) as PersonaSuggestion[];
@@ -403,7 +410,7 @@ export default function Compose() {
         );
       } catch (e: any) {
         if (!stop) {
-          setPersonaError(e?.message ?? "キャラ候補の取得に失敗しました");
+          setPersonaError("キャラ候補の取得に失敗しました。本文を少し変えてもう一度お試しください。");
           setPersonaCandidates([]);
         }
       } finally {
@@ -440,7 +447,7 @@ export default function Compose() {
         });
         const json = await res.json().catch(() => null);
         if (!res.ok || !json) {
-          throw new Error(json?.error ?? "相性データ取得に失敗しました");
+          throw new Error("相性データ取得に失敗しました");
         }
         if (stop) return;
         const items = Array.isArray(json.items)
@@ -458,7 +465,7 @@ export default function Compose() {
       } catch (e: any) {
         if (stop) return;
         setCompatSuggestions([]);
-        setCompatError(e?.message ?? "相性データ取得に失敗しました");
+        setCompatError("相性データを読み込めませんでした。主キャラを選び直してお試しください。");
       } finally {
         if (!stop) setCompatLoading(false);
       }
@@ -536,7 +543,7 @@ export default function Compose() {
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.error ?? "投稿結果の取得に失敗しました");
+        throw new Error("投稿結果の取得に失敗しました");
       }
       setLastPostedPerformance(json as PostPerformanceResponse);
       setLastPostedPostId(id);
@@ -546,7 +553,7 @@ export default function Compose() {
         body: JSON.stringify({ source: "compose_scorecard" }),
       }).catch(() => null);
     } catch (e: any) {
-      setLastPostedPerformanceError(e?.message ?? "投稿結果の取得に失敗しました");
+      setLastPostedPerformanceError("投稿結果を読み込めませんでした。更新ボタンで再試行してください。");
       setLastPostedPostId(id);
     } finally {
       setLastPostedPerformanceLoading(false);
@@ -574,13 +581,18 @@ export default function Compose() {
 
   async function submit() {
     if (posting) return;
+    if (!text.trim() && !file) {
+      setFormError("本文または画像を追加してから投稿してください。");
+      return;
+    }
     setPosting(true);
+    setFormError(null);
 
     try {
       // 認証チェック
       const { data: { user } } = await sb.auth.getUser();
       if (!user) {
-        alert("投稿するにはログインが必要です。");
+        setFormError("投稿するにはログインが必要です。ログイン後、この画面に戻って投稿できます。");
         setPosting(false);
         return;
       }
@@ -592,7 +604,7 @@ export default function Compose() {
         const path = `${user.id}/${crypto.randomUUID()}.${ext}`;
         const up = await sb.storage.from("media").upload(path, file, { upsert: false });
         if (up.error) {
-          alert("画像のアップロードに失敗しました: " + up.error.message);
+          setFormError(MEDIA_UPLOAD_ERROR);
           setPosting(false);
           return;
         }
@@ -669,10 +681,11 @@ export default function Compose() {
         .single();
 
       if (error) {
-        alert(error.message);
+        setFormError(COMPOSE_SAVE_ERROR);
       } else {
         // 投稿結果カードを表示するため、この画面に残す
         setLastPostedPostId(data.id);
+        setLastPostedNotice("投稿しました。キャラ分析とおすすめタイムラインに少しずつ反映されます。");
         setLastPostedPerformance(null);
         setLastPostedPerformanceError(null);
         void loadPostPerformance(data.id);
@@ -710,9 +723,50 @@ export default function Compose() {
 
   return (
     <div className="space-y-4">
+      <header className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+          Persona Compose
+        </div>
+        <h1 className="mt-1 text-2xl font-bold">投稿からキャラを育てる</h1>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          本文を書くと、投稿のキャラ候補、相性の良い副キャラ、返信されやすい導線をその場で確認できます。
+          投稿後は反応が増えるほど、あなた向けのタイムラインとキャラ進化に反映されます。
+        </p>
+      </header>
+
+      {!lastPostedPostId && text.trim().length === 0 ? <SignedInDemoGuide compact /> : null}
+
+      {formError && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+          {formError}
+        </div>
+      )}
+
+      {lastPostedNotice && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+          <div className="font-medium">{lastPostedNotice}</div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {lastPostedPostId ? (
+              <a
+                href={`/p/${encodeURIComponent(lastPostedPostId)}`}
+                className="rounded-full bg-emerald-700 px-3 py-1.5 text-white"
+              >
+                投稿を開く
+              </a>
+            ) : null}
+            <a href="/dashboard/persona" className="rounded-full border border-emerald-200 bg-white px-3 py-1.5">
+              キャラ分析を見る
+            </a>
+            <a href="/persona-feed" className="rounded-full border border-emerald-200 bg-white px-3 py-1.5">
+              キャラTLへ
+            </a>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-xl border bg-white p-3 space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-sm font-semibold">投稿フォーマット（SNS最適化）</div>
+          <div className="text-sm font-semibold">投稿フォーマット</div>
           <a href="/saved" className="text-xs underline">
             保存/コレクションを見る
           </a>
@@ -738,10 +792,10 @@ export default function Compose() {
         </div>
         <div className="text-xs opacity-70">
           {composeFormatMode === "post"
-            ? "通常投稿: 分析・キャラ付け・リライトの標準フロー"
+            ? "通常投稿: キャラ付けとリライトを見ながら、いつもの投稿として出します。"
             : composeFormatMode === "short"
-            ? "短尺投稿: 冒頭のフックを優先して短く圧縮"
-            : "ストーリー: 1〜3行で感情共有しやすい形に変換"}
+            ? "短尺投稿: 冒頭のフックを優先して短く整えます。"
+            : "ストーリー: 1〜3行で感情共有しやすい形に整えます。"}
         </div>
         {text.trim() && composeFormatMode !== "post" && shortStoryOptimizedSeed && shortStoryOptimizedSeed !== text ? (
           <div className="rounded-lg border bg-slate-50 p-2 space-y-2">
@@ -926,8 +980,8 @@ export default function Compose() {
       )}
 
       <textarea
-        className="w-full h-52 p-3 rounded border"
-        placeholder="いま何してる？（最大280文字）"
+        className="w-full h-52 rounded-lg border border-slate-200 bg-white p-3 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+        placeholder="いま考えていること、誰かに聞いてみたいこと、残したい気づきを書いてください。（最大280文字）"
         value={text}
         onChange={(e) => onChangeText(e.target.value)}
       />
@@ -1014,10 +1068,10 @@ export default function Compose() {
           </div>
         </div>
         <div className="text-sm opacity-80">
-          補正後予測 {calibratedBuzzScore}%{" "}
+          あなた向け予測 {calibratedBuzzScore}%{" "}
           {buzzCalibration
-            ? `(係数 x${buzzCalibration.multiplier.toFixed(2)} / 信頼 ${(buzzCalibration.confidence * 100).toFixed(0)}% / n=${buzzCalibration.samples})`
-            : "(補正データなし)"}
+            ? `(これまでの反応を少し反映)`
+            : "(反応データが増えると精度が上がります)"}
         </div>
         <div className="flex flex-wrap gap-2">
           {buzz.metrics.map((m) => (
@@ -1181,8 +1235,8 @@ export default function Compose() {
                   </span>
                 </div>
                 <div className="opacity-70">
-                  ELA: {analysis.elaScore != null ? (analysis.elaScore * 100).toFixed(1) : "-"}% ・ EXIF:{" "}
-                  {analysis.flags?.noExif ? "なし" : "あり"}
+                  画像メタ情報: {analysis.flags?.noExif ? "少なめ" : "確認できました"}。
+                  編集推定は参考値として扱ってください。
                 </div>
                 {analysis.reasons?.length ? (
                   <ul className="list-disc pl-5 opacity-70">
@@ -1200,11 +1254,12 @@ export default function Compose() {
       </div>
 
       <button
+        type="button"
         onClick={submit}
         disabled={posting || (!text && !file)}
-        className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
+        className="rounded-full bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
       >
-        投稿する
+        {posting ? "投稿中…" : "投稿する"}
       </button>
     </div>
   );

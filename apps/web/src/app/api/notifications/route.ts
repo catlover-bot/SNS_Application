@@ -1,5 +1,6 @@
 // apps/web/src/app/api/notifications/route.ts
 import { NextResponse } from "next/server";
+import { safeJsonError } from "@/lib/apiSecurity";
 import { supabaseServer } from "@/lib/supabase/server";
 
 export async function GET() {
@@ -14,7 +15,7 @@ export async function GET() {
     .order("created_at", { ascending: false })
     .limit(50);
 
-  if (error) return NextResponse.json({ items: [], error: error.message }, { status: 500 });
+  if (error) return safeJsonError("notifications_unavailable", 500, { items: [] });
   return NextResponse.json({ items: data ?? [] });
 }
 
@@ -33,6 +34,6 @@ export async function POST(req: Request) {
     .eq("user_id", user.id)
     .in("id", ids);
 
-  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  if (error) return safeJsonError("notifications_update_failed", 500);
   return NextResponse.json({ ok: true });
 }

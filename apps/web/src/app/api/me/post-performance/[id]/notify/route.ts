@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRateLimit, requireSameOrigin } from "@/lib/apiSecurity";
+import { requireRateLimit, requireSameOrigin, safeJsonError } from "@/lib/apiSecurity";
 import { supabaseServer } from "@/lib/supabase/server";
 
 type ReactionRow = { kind?: string | null };
@@ -141,7 +141,7 @@ async function sendExpoPushGrowthBestEffort(args: {
       sent: 0,
       targets: 0,
       disabled: 0,
-      errors: [devicesRes.error.message ?? "push_devices_read_failed"],
+      errors: ["push_devices_unavailable"],
     };
   }
 
@@ -319,7 +319,7 @@ async function enqueueGrowthPushJobBestEffort(args: {
       queued: false,
       available: true,
       jobId: null as string | null,
-      error: ins.error.message ?? "push_job_enqueue_failed",
+      error: "push_queue_unavailable",
     };
   }
 
@@ -365,11 +365,12 @@ async function enqueueGrowthPushJobBestEffort(args: {
   return { queued: true, available: true, jobId, error: null as string | null };
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const originErr = requireSameOrigin(req, { allowMissingOrigin: false });
   if (originErr) return originErr;
 
-  const postId = String(params?.id ?? "").trim();
+  const { id } = await params;
+  const postId = String(id ?? "").trim();
   if (!postId) return NextResponse.json({ ok: false, error: "invalid_post_id" }, { status: 400 });
 
   const supa = await supabaseServer();
@@ -386,9 +387,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (rateErr) return rateErr;
 
   const postRes = await supa.from("posts").select("id,author,text").eq("id", postId).maybeSingle();
-  if (postRes.error) {
-    return NextResponse.json({ ok: false, error: postRes.error.message ?? "post_read_failed" }, { status: 500 });
-  }
+  if (postRes.error) return safeJsonError("post_unavailable", 500);
   const post = postRes.data as any;
   if (!post) return NextResponse.json({ ok: false, error: "not_found" }, { status: 404 });
   if (String(post.author ?? "").trim() !== user.id) {
@@ -410,10 +409,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   ]);
 
   if (reactionsRes.error) {
-    return NextResponse.json(
-      { ok: false, error: reactionsRes.error.message ?? "reactions_read_failed" },
-      { status: 500 }
-    );
+    return safeJsonError("post_reactions_unavailable", 500);
   }
 
   const counts = { saves: 0, replies: 0, opens: 0 };
@@ -454,10 +450,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   });
   const stateAvailable = !stateUp.error;
   if (stateUp.error && !isMissingRelationError(stateUp.error, "user_post_growth_alert_state")) {
-    return NextResponse.json(
-      { ok: false, error: stateUp.error.message ?? "growth_state_upsert_failed" },
-      { status: 500 }
-    );
+    return safeJsonError("growth_state_save_failed", 500);
   }
 
   if (!picked) {
@@ -484,10 +477,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .select("id")
     .single();
   if (ins.error) {
-    return NextResponse.json(
-      { ok: false, error: ins.error.message ?? "notification_insert_failed", stateAvailable },
-      { status: 500 }
-    );
+    return safeJsonError("notification_create_failed", 500, { stateAvailable });
   }
 
   const notificationId = String((ins.data as any)?.id ?? "").trim() || null;

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireRateLimit, requireSameOrigin } from "@/lib/apiSecurity";
+import { requireRateLimit, requireSameOrigin, safeJsonError } from "@/lib/apiSecurity";
 import { supabaseServer } from "@/lib/supabase/server";
 
 function isMissingRelationError(err: any, table = "user_blocks") {
@@ -44,10 +44,7 @@ export async function POST(req: Request) {
   );
 
   if (up.error) {
-    const message = isMissingRelationError(up.error)
-      ? "user_blocks table is missing. Apply docs/sql/app_store_safety.sql first."
-      : up.error.message;
-    return NextResponse.json({ ok: false, error: message }, { status: 400 });
+    return safeJsonError(isMissingRelationError(up.error) ? "block_unavailable" : "block_failed", 400);
   }
 
   return NextResponse.json({ ok: true });
@@ -83,7 +80,7 @@ export async function DELETE(req: Request) {
     .eq("blocked_id", blockedId);
 
   if (del.error) {
-    return NextResponse.json({ ok: false, error: del.error.message }, { status: 400 });
+    return safeJsonError("unblock_failed", 400);
   }
 
   return NextResponse.json({ ok: true });

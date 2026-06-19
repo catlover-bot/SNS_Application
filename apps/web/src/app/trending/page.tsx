@@ -21,35 +21,44 @@ export default async function TrendingPage() {
 
   return (
     <div className="max-w-3xl mx-auto p-6 space-y-4">
-      <header className="flex items-center gap-3">
-        <h1 className="text-2xl font-bold">トレンド</h1>
-        {used_personas.length > 0 ? (
-          <span className="text-xs px-2 py-1 rounded-full border bg-amber-50">
-            あなた向け（{used_personas.join(", ")}）
-          </span>
-        ) : (
-          <span className="text-xs px-2 py-1 rounded-full border bg-gray-50">
-            全体人気順
-          </span>
-        )}
-        <div className="ml-auto text-sm">
-          <Link href="/personas" className="underline">キャラ図鑑</Link>
+      <header className="rounded-xl border bg-white p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <div>
+            <h1 className="text-2xl font-bold">トレンド</h1>
+            <p className="mt-2 text-sm text-slate-600">
+              いま反応が集まっている投稿を、キャラ傾向も少し加味して眺められます。
+            </p>
+          </div>
+          <div className="ml-auto flex flex-wrap items-center gap-2 text-sm">
+            {used_personas.length > 0 ? (
+              <span className="text-xs px-2 py-1 rounded-full border bg-amber-50">
+                あなた向け（{used_personas.join(", ")}）
+              </span>
+            ) : (
+              <span className="text-xs px-2 py-1 rounded-full border bg-gray-50">
+                全体人気順
+              </span>
+            )}
+            <Link href="/personas" className="underline">キャラ図鑑</Link>
+          </div>
         </div>
       </header>
 
       {items.length === 0 ? (
-        <div className="opacity-70 text-sm">おすすめが見つかりませんでした。</div>
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">
+          まだおすすめが見つかりませんでした。投稿や反応が増えるとここに表示されます。
+        </div>
       ) : (
         <div className="space-y-3">
           {items.map((p: any) => (
             <div key={p.id} className="relative">
               {/* PostCard は既存のまま利用 */}
               <PostCard p={p} />
-              {/* 右上にスコア/マッチ情報（軽く） */}
+              {/* 右上にランキング情報（軽く） */}
               {("score" in p || "matched_persona" in p) && (
                 <div className="absolute top-2 right-2 text-xs text-gray-500 bg-white/80 px-2 py-1 rounded border">
-                  {p.matched_persona ? `match: ${p.matched_persona}` : "global"}
-                  {typeof p.score === "number" ? ` · ${p.score.toFixed(5)}` : ""}
+                  {p.matched_persona ? `相性 ${p.matched_persona}` : "全体"}
+                  {typeof p.score === "number" ? ` · 注目度 ${Math.round(Math.max(0, Math.min(1, p.score)) * 100)}%` : ""}
                 </div>
               )}
             </div>

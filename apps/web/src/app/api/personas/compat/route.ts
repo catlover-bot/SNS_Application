@@ -1,5 +1,7 @@
 // apps/web/src/app/api/personas/compat/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { safeJsonError } from "@/lib/apiSecurity";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { supabaseServer } from "@/lib/supabase/server";
 import { buildPersonaProfile } from "@sns/core";
 
@@ -201,6 +203,10 @@ function buildCompatInsights(args: {
 
 export async function GET(req: NextRequest) {
   try {
+    if (!isSupabaseConfigured()) {
+      return safeJsonError("service_unavailable", 503);
+    }
+
     const { searchParams } = new URL(req.url);
 
     const sourceKey = searchParams.get("key");
@@ -249,13 +255,7 @@ export async function GET(req: NextRequest) {
 
     if (compatError) {
       console.error("[persona_compat] error:", compatError);
-      return NextResponse.json(
-        {
-          error: "failed to load compat",
-          details: compatError.message,
-        },
-        { status: 500 }
-      );
+      return safeJsonError("persona_compat_unavailable", 500);
     }
 
     const compatRows = (compatRowsRaw ?? []) as CompatRowRaw[];
@@ -279,13 +279,7 @@ export async function GET(req: NextRequest) {
 
     if (defsError) {
       console.error("[persona_defs] error:", defsError);
-      return NextResponse.json(
-        {
-          error: "failed to load persona defs",
-          details: defsError.message,
-        },
-        { status: 500 }
-      );
+      return safeJsonError("persona_defs_unavailable", 500);
     }
 
     const personaDefs = (personaDefsRaw ?? []) as PersonaDefRow[];
@@ -330,12 +324,6 @@ export async function GET(req: NextRequest) {
     });
   } catch (err: any) {
     console.error("[persona_compat API] fatal error", err);
-    return NextResponse.json(
-      {
-        error: "internal_error",
-        details: err?.message ?? String(err),
-      },
-      { status: 500 }
-    );
+    return safeJsonError("persona_compat_failed", 500);
   }
 }

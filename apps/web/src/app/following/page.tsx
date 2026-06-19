@@ -19,6 +19,7 @@ export default function Following() {
   const [items, setItems] = useState<Row[]>([]);
   const [needLogin, setNeedLogin] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [openedIds, setOpenedIds] = useState<Record<string, true>>({});
   const openStateRequestedIds = useRef<Set<string>>(new Set());
   const persistedOpenedIds = useRef<Set<string>>(new Set());
@@ -92,6 +93,7 @@ export default function Following() {
     let alive = true;
 
     (async () => {
+      setError(null);
       const { data: { user } } = await sb.auth.getUser();
 
       if (!user) {
@@ -112,8 +114,8 @@ export default function Following() {
       if (!alive) return;
 
       if (error) {
-        console.error(error);
         setItems([]);
+        setError("フォロー中フィードを読み込めませんでした。時間をおいてもう一度お試しください。");
       } else {
         const rows = (data ?? []) as Row[];
         setItems(rows);
@@ -129,9 +131,10 @@ export default function Following() {
 
   if (needLogin) {
     return (
-      <div className="space-y-3 p-6">
-        <p>フォロー中のフィードを見るにはログインが必要です。</p>
-        <Link href="/login?next=/following" className="border rounded px-4 py-2 inline-block">
+      <div className="mx-auto max-w-3xl space-y-3 rounded-xl border bg-white p-6">
+        <h1 className="text-2xl font-bold">フォロー中</h1>
+        <p className="text-sm text-slate-600">フォローした人の投稿をまとめて見るにはログインが必要です。</p>
+        <Link href="/login?next=/following" className="inline-block rounded-full bg-slate-950 px-4 py-2 text-sm text-white">
           ログイン
         </Link>
       </div>
@@ -139,10 +142,28 @@ export default function Following() {
   }
 
   return (
-    <div className="space-y-3 p-6">
-      {loading && <div className="opacity-60 text-sm">読み込み中…</div>}
-      {!loading && items.length === 0 && (
-        <div className="opacity-60 text-sm">フォロー中の投稿はまだありません。</div>
+    <div className="mx-auto max-w-3xl space-y-4 p-6">
+      <header className="rounded-xl border bg-white p-4">
+        <h1 className="text-2xl font-bold">フォロー中</h1>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          気になる人をフォローすると、その人の投稿がここに集まります。
+        </p>
+      </header>
+      {error && <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>}
+      {loading && <div className="rounded-lg border bg-white p-4 text-sm text-slate-500">読み込み中…</div>}
+      {!loading && !error && items.length === 0 && (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">
+          <div className="font-semibold text-slate-900">フォロー中の投稿はまだありません</div>
+          <p className="mt-1">検索やキャラ別タイムラインから気になる人を見つけてみましょう。</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link href="/search" className="rounded-full border border-slate-200 bg-white px-4 py-2 hover:bg-slate-50">
+              検索する
+            </Link>
+            <Link href="/persona-feed" className="rounded-full bg-blue-600 px-4 py-2 text-white hover:bg-blue-700">
+              キャラ別TLへ
+            </Link>
+          </div>
+        </div>
       )}
       {freshItems.length > 0 && (
         <section className="space-y-2 rounded-xl border bg-white p-3">

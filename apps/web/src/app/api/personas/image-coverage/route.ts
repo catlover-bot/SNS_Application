@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
+import { safeJsonError } from "@/lib/apiSecurity";
 import { supabaseServer } from "@/lib/supabase/server";
 
 type PersonaKeyRow = {
@@ -31,6 +32,7 @@ export async function GET() {
     supa = await supabaseServer();
   } catch (e: any) {
     initError = e?.message ?? "supabase_server_init_failed";
+    console.error("[persona image coverage] supabase init error", e);
   }
 
   if (!supa) {
@@ -59,17 +61,12 @@ export async function GET() {
         static_count: rows.length,
         fallback_count: 0,
         coverage_pct: 100,
-        warnings: [initError].filter(Boolean),
+        warnings: [initError ? "persona_database_unavailable" : null].filter(Boolean),
         items: rows,
       });
-    } catch {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: initError ?? "supabase_server_init_failed",
-        },
-        { status: 500 }
-      );
+    } catch (e) {
+      console.error("[persona image coverage] filesystem fallback failed", e);
+      return safeJsonError("persona_image_coverage_unavailable", 500);
     }
   }
 
@@ -79,6 +76,10 @@ export async function GET() {
   ]);
 
   if (archeRes.error && defsRes.error) {
+    console.error("[persona image coverage] persona defs fetch failed", {
+      archeError: archeRes.error,
+      defsError: defsRes.error,
+    });
     try {
       const names = await fs.readdir(baseDir);
       const keys = Array.from(
@@ -104,17 +105,12 @@ export async function GET() {
         static_count: rows.length,
         fallback_count: 0,
         coverage_pct: 100,
-        warnings: [`persona defs fetch failed: ${archeRes.error.message}; ${defsRes.error.message}`],
+        warnings: ["persona_defs_unavailable"],
         items: rows,
       });
-    } catch {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: `persona defs fetch failed: ${archeRes.error.message}; ${defsRes.error.message}`,
-        },
-        { status: 500 }
-      );
+    } catch (e) {
+      console.error("[persona image coverage] filesystem fallback after db failure failed", e);
+      return safeJsonError("persona_image_coverage_unavailable", 500);
     }
   }
 
@@ -170,8 +166,8 @@ export async function GET() {
     fallback_count: fallbackCount,
     coverage_pct: coveragePct,
     warnings: [
-      archeRes.error?.message ?? null,
-      defsRes.error?.message ?? null,
+      archeRes.error ? "persona_archetypes_unavailable" : null,
+      defsRes.error ? "persona_defs_unavailable" : null,
     ].filter(Boolean),
     items: rows,
   });

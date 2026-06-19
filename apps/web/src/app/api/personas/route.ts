@@ -2,12 +2,18 @@
 export const revalidate = 3600;
 
 import { NextRequest, NextResponse } from "next/server";
+import { safeJsonError } from "@/lib/apiSecurity";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { supabaseServer } from "@/lib/supabase/server";
 
 // GET /api/personas
 //   - 一覧:   /api/personas
 //   - 詳細:   /api/personas?key=afterparty_host_legend
 export async function GET(req: NextRequest) {
+  if (!isSupabaseConfigured()) {
+    return safeJsonError("service_unavailable", 503);
+  }
+
   const supa = await supabaseServer();
   const { searchParams } = new URL(req.url);
   const key = searchParams.get("key");
@@ -33,10 +39,7 @@ export async function GET(req: NextRequest) {
 
     if (error) {
       console.error("[api/personas] detail error", error);
-      return NextResponse.json(
-        { error: error.message },
-        { status: 500 }
-      );
+      return safeJsonError("persona_unavailable", 500);
     }
 
     if (!data) {
@@ -67,10 +70,7 @@ export async function GET(req: NextRequest) {
 
   if (error) {
     console.error("[api/personas] list error", error);
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 }
-    );
+    return safeJsonError("personas_unavailable", 500);
   }
 
   // フロント側で扱いやすいように image_url -> icon に寄せる

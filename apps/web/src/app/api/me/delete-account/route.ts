@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireRateLimit, requireSameOrigin } from "@/lib/apiSecurity";
+import { requireRateLimit, requireSameOrigin, safeJsonError } from "@/lib/apiSecurity";
 import { supabaseServer } from "@/lib/supabase/server";
 
 function isMissingFunctionError(err: any, fn = "delete_my_account") {
@@ -29,10 +29,7 @@ export async function POST(req: Request) {
 
   const rpc = await supa.rpc("delete_my_account");
   if (rpc.error) {
-    const message = isMissingFunctionError(rpc.error)
-      ? "delete_my_account RPC is missing. Apply docs/sql/app_store_safety.sql first."
-      : rpc.error.message;
-    return NextResponse.json({ ok: false, error: message }, { status: 400 });
+    return safeJsonError(isMissingFunctionError(rpc.error) ? "account_delete_unavailable" : "account_delete_failed", 400);
   }
 
   return NextResponse.json({ ok: true, result: rpc.data ?? null });

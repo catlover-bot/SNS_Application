@@ -30,7 +30,7 @@ export default function TimelineLearningDashboardPage() {
     setError(null);
     try {
       const { res, json } = await fetchTimelineSignals();
-      if (!res.ok || !json) throw new Error((json as any)?.error ?? "TL学習データの取得に失敗しました");
+      if (!res.ok || !json) throw new Error("おすすめ学習データの取得に失敗しました");
       setData({
         weights: json.weights ?? null,
         weightsSamples: Math.max(0, Math.floor(Number(json.weightsSamples ?? 0) || 0)),
@@ -40,8 +40,8 @@ export default function TimelineLearningDashboardPage() {
         learningInput: json.learningInput ?? null,
         degraded: json.degraded,
       });
-    } catch (e: any) {
-      setError(e?.message ?? "TL学習データの取得に失敗しました");
+    } catch {
+      setError("おすすめ学習データを読み込めませんでした。時間をおいて再度お試しください。");
       setData(null);
     } finally {
       setLoading(false);
@@ -106,10 +106,10 @@ export default function TimelineLearningDashboardPage() {
         </a>
       </div>
 
-      {error ? <div className="text-sm text-red-600">{error}</div> : null}
+      {error ? <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div> : null}
       {data?.degraded?.timelineWeightsMissing ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">
-          `user_timeline_signal_weights` が未適用です。
+          おすすめ学習は準備中です。開いた投稿や保存した投稿は、利用できる範囲で反映されます。
         </div>
       ) : null}
 
@@ -180,7 +180,7 @@ export default function TimelineLearningDashboardPage() {
             <div className="font-semibold text-sm">{learningSummary.recentUpdatesTitle}</div>
             {data.degraded?.timelineWeightsHistoryMissing ? (
               <div className="text-sm opacity-70">
-                `user_timeline_signal_weights_history` が未適用のため、履歴テーブル表示は未使用です。
+                履歴表示は準備中です。おすすめ自体は現在の反応をもとに調整されます。
               </div>
             ) : recentPoints.length === 0 ? (
               <div className="text-sm opacity-70">{learningSummary.unavailableHint}</div>
@@ -189,7 +189,7 @@ export default function TimelineLearningDashboardPage() {
                 <div key={`${p.at}-${p.samples}`} className="rounded-lg border bg-slate-50 p-2">
                   <div className="flex items-center justify-between text-xs">
                     <span>{new Date(p.at).toLocaleString("ja-JP")}</span>
-                    <span>samples {p.samples}</span>
+                    <span>反応 {p.samples}</span>
                   </div>
                   <div className="mt-1 text-[11px] text-slate-600">
                     開封 {p.openedCount ?? 0} / 保存 {p.savedCount ?? 0} / フォロー {p.followedCount ?? 0}

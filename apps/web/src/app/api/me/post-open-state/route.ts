@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { safeJsonError } from "@/lib/apiSecurity";
 import { supabaseServer } from "@/lib/supabase/server";
 
 const MAX_POST_IDS = 200;
@@ -54,10 +55,7 @@ export async function GET(req: NextRequest) {
     if (isMissingOpenStateTableError(res.error)) {
       return NextResponse.json({ openedIds: [], degraded: true });
     }
-    return NextResponse.json(
-      { error: res.error.message ?? "failed_to_load_open_state", openedIds: [] },
-      { status: 500 }
-    );
+    return safeJsonError("open_state_unavailable", 500, { openedIds: [] });
   }
 
   const openedIds = Array.from(
@@ -104,10 +102,7 @@ export async function POST(req: NextRequest) {
     if (isMissingOpenStateTableError(up.error)) {
       return NextResponse.json({ ok: false, degraded: true }, { status: 200 });
     }
-    return NextResponse.json(
-      { ok: false, error: up.error.message ?? "failed_to_save_open_state" },
-      { status: 500 }
-    );
+    return safeJsonError("open_state_save_failed", 500);
   }
 
   return NextResponse.json({ ok: true, count: rows.length });

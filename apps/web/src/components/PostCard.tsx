@@ -325,6 +325,7 @@ export default function PostCard({
   const [replyCount, setReplyCount] = useState<number>(
     p.reply_count ?? 0
   );
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   // 🔥 LLM 由来の「嘘％」（AI 判定バッジから通知される）
   const [aiLiePercent, setAiLiePercent] = useState<number | null>(null);
@@ -815,16 +816,19 @@ export default function PostCard({
   }, [p.id]);
 
   async function ensureLoginOrRedirect() {
-    const {
-      data: { user },
-    } = await sb.auth.getUser();
-    if (!user) {
-      location.href = `/login?next=${encodeURIComponent(
-        location.pathname
-      )}`;
+    try {
+      const {
+        data: { user },
+      } = await sb.auth.getUser();
+      if (!user) {
+        location.href = `/login?next=${encodeURIComponent(location.pathname)}`;
+        return null;
+      }
+      return user;
+    } catch {
+      setActionMessage("ログイン状態を確認できませんでした。時間をおいて再度お試しください。");
       return null;
     }
-    return user;
   }
 
   // いいね
@@ -833,6 +837,7 @@ export default function PostCard({
     const user = await ensureLoginOrRedirect();
     if (!user) return;
     setPendingLike(true);
+    setActionMessage(null);
 
     const prevLiked = liked,
       prevLikes = likes;
@@ -860,6 +865,7 @@ export default function PostCard({
     } catch {
       setLiked(prevLiked);
       setLikes(prevLikes);
+      setActionMessage("いいねを更新できませんでした。時間をおいて再度お試しください。");
     } finally {
       setPendingLike(false);
     }
@@ -871,6 +877,7 @@ export default function PostCard({
     const user = await ensureLoginOrRedirect();
     if (!user) return;
     setPendingBoost(true);
+    setActionMessage(null);
 
     const prevBoosted = boosted,
       prevBoosts = boosts;
@@ -898,6 +905,7 @@ export default function PostCard({
     } catch {
       setBoosted(prevBoosted);
       setBoosts(prevBoosts);
+      setActionMessage("拡散を更新できませんでした。時間をおいて再度お試しください。");
     } finally {
       setPendingBoost(false);
     }
@@ -908,6 +916,7 @@ export default function PostCard({
     const user = await ensureLoginOrRedirect();
     if (!user) return;
     setPendingSave(true);
+    setActionMessage(null);
 
     const prevSaved = saved;
     const prevSaves = saves;
@@ -947,6 +956,7 @@ export default function PostCard({
       setSaves(prevSaves);
       setSaveCollectionKey(prevCollectionKey);
       setSaveCollectionLabel(prevCollectionLabel);
+      setActionMessage("保存を更新できませんでした。時間をおいて再度お試しください。");
     } finally {
       setPendingSave(false);
     }
@@ -975,6 +985,7 @@ export default function PostCard({
     const user = await ensureLoginOrRedirect();
     if (!user) return;
     setPendingVote(true);
+    setActionMessage(null);
 
     const prev = myVote;
     const prevTrue = voteTrue,
@@ -1012,6 +1023,7 @@ export default function PostCard({
       setMyVote(prev);
       setVoteTrue(prevTrue);
       setVoteFalse(prevFalse);
+      setActionMessage("投票を更新できませんでした。時間をおいて再度お試しください。");
     } finally {
       setPendingVote(false);
     }
@@ -1024,6 +1036,7 @@ export default function PostCard({
     if (!user) return;
 
     setPendingLabelKey(label);
+    setActionMessage(null);
     const had = myLabels.has(label);
     const prevSet = new Set(myLabels);
     const prevCounts = { ...labelCounts };
@@ -1055,6 +1068,7 @@ export default function PostCard({
     } catch {
       setMyLabels(prevSet);
       setLabelCounts(prevCounts);
+      setActionMessage("ラベルを更新できませんでした。時間をおいて再度お試しください。");
     } finally {
       setPendingLabelKey(null);
     }
@@ -1066,18 +1080,24 @@ export default function PostCard({
     const user = await ensureLoginOrRedirect();
     if (!user) return;
     setReplying(true);
-    const r = await sb.rpc("create_reply", {
-      parent: p.id,
-      body: replyText.trim(),
-    });
-    if (!r.error) {
+    setActionMessage(null);
+    try {
+      const r = await sb.rpc("create_reply", {
+        parent: p.id,
+        body: replyText.trim(),
+      });
+      if (r.error) throw r.error;
       setReplyText("");
       setShowReply(false);
       setShowThread(true); // 送ったらスレッドを開く
       setReplyCount((c) => (c ?? 0) + 1); // カウント楽観更新
+      setActionMessage("返信を投稿しました。");
       onReplySubmitted?.();
+    } catch {
+      setActionMessage("返信を投稿できませんでした。時間をおいて再度お試しください。");
+    } finally {
+      setReplying(false);
     }
-    setReplying(false);
   }
 
   return (
@@ -1156,140 +1176,9 @@ export default function PostCard({
               : ""}
           </div>
         )}
-        {(calibratedLie.feedbackSignals.timeBucket || calibratedLie.feedbackSignals.postFormat) && (
-          <div className="text-[11px] text-slate-400 text-right">
-            文脈 {calibratedLie.feedbackSignals.timeBucket ?? "time-?"} /{" "}
-            {calibratedLie.feedbackSignals.weekdayBucket ?? "day-?"} /{" "}
-            {calibratedLie.feedbackSignals.postFormat}
-            {calibratedLie.feedbackSignals.weekdayTimeBucket
-              ? ` / ${calibratedLie.feedbackSignals.weekdayTimeBucket}`
-              : ""}
-          </div>
-        )}
         <div className="text-[11px] text-slate-400 text-right">
-          条件 {calibratedLie.feedbackSignals.textLengthBucket ?? "len-?"} /{" "}
-          添付 {attachmentKindLabel(calibratedLie.feedbackSignals.attachmentKind)} / 減衰{" "}
-          {Math.round(calibratedLie.feedbackSignals.feedbackDecay * 100)}%
+          反応が増えるほど、投稿の届き方メモがあなた向けに調整されます。
         </div>
-        <div className="text-[11px] text-slate-400 text-right">
-          学習係数{" "}
-          {!lieLearnedContextAvailable
-            ? "DB未適用"
-            : calibratedLie.feedbackSignals.learnedAdjustmentBias == null
-              ? "未学習"
-              : `${Math.round(calibratedLie.feedbackSignals.learnedAdjustmentBias * 100)}pt (信頼 ${Math.round(
-                  (calibratedLie.feedbackSignals.learnedConfidence ?? 0) * 100
-                )}% / n=${calibratedLie.feedbackSignals.learnedSamples})`}
-        </div>
-        <div className="flex justify-end gap-1">
-          <button
-            type="button"
-            onClick={() => {
-              if (!lieLearnedHistoryAvailable || !lieLearnedHistoryDailyAvailable) return;
-              setLieLearnedHistoryMode("overlay");
-            }}
-            disabled={!lieLearnedHistoryAvailable || !lieLearnedHistoryDailyAvailable}
-            className={`text-[10px] px-2 py-0.5 rounded-full border ${
-              lieLearnedHistoryMode === "overlay"
-                ? "bg-blue-50 border-blue-300 text-blue-700"
-                : "bg-white text-slate-500"
-            } disabled:opacity-50`}
-          >
-            overlay
-          </button>
-          <button
-            type="button"
-            onClick={() => setLieLearnedHistoryMode("raw")}
-            className={`text-[10px] px-2 py-0.5 rounded-full border ${
-              lieLearnedHistoryMode === "raw" ? "bg-blue-50 border-blue-300 text-blue-700" : "bg-white text-slate-500"
-            }`}
-          >
-            raw
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (!lieLearnedHistoryDailyAvailable) return;
-              setLieLearnedHistoryMode("daily");
-            }}
-            disabled={!lieLearnedHistoryDailyAvailable}
-            className={`text-[10px] px-2 py-0.5 rounded-full border ${
-              lieLearnedHistoryMode === "daily" ? "bg-blue-50 border-blue-300 text-blue-700" : "bg-white text-slate-500"
-            } disabled:opacity-50`}
-          >
-            daily
-          </button>
-        </div>
-        {lieLearnedHistoryMode === "overlay" &&
-        lieLearnedHistoryAvailable &&
-        lieLearnedHistoryDailyAvailable &&
-        overlayLieLearnedTrendBars.length >= 2 ? (
-          <div className="space-y-1">
-            <div className="text-[11px] text-slate-400 text-right">
-              推移 (重ね表示) raw {Math.round((lieLearnedHistory[0]?.adjustmentBias ?? 0) * 100)}pt →{" "}
-              {Math.round((lieLearnedHistory[lieLearnedHistory.length - 1]?.adjustmentBias ?? 0) * 100)}pt / daily{" "}
-              {Math.round((lieLearnedHistoryDaily[0]?.adjustmentBias ?? 0) * 100)}pt →{" "}
-              {Math.round((lieLearnedHistoryDaily[lieLearnedHistoryDaily.length - 1]?.adjustmentBias ?? 0) * 100)}pt
-            </div>
-            <div className="flex justify-end">
-              <div className="flex items-end gap-[2px] h-7">
-                {overlayLieLearnedTrendBars.map((pair, idx) => (
-                  <div key={`lie-trend-overlay-${p.id}-${idx}`} className="relative w-2 h-7">
-                    {pair.daily != null ? (
-                      <div
-                        className={`absolute bottom-0 left-0 right-0 rounded-sm ${
-                          pair.isLast ? "bg-cyan-400/80" : "bg-cyan-200"
-                        }`}
-                        style={{ height: `${Math.round(8 + Math.max(0.08, pair.daily) * 18)}px` }}
-                      />
-                    ) : null}
-                    {pair.raw != null ? (
-                      <div
-                        className={`absolute bottom-0 left-[1px] right-[1px] rounded-sm ${
-                          pair.isLast ? "bg-blue-600" : "bg-blue-300"
-                        }`}
-                        style={{ height: `${Math.round(8 + Math.max(0.08, pair.raw) * 18)}px` }}
-                      />
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="text-[10px] text-slate-400 text-right">青=raw / 水色=daily</div>
-          </div>
-        ) : displayedLieLearnedHistoryAvailable && displayedLieLearnedHistory.length >= 2 ? (
-          <div className="space-y-1">
-            <div className="text-[11px] text-slate-400 text-right">
-              推移 ({lieLearnedHistoryMode === "daily" ? "日次集約" : "生履歴"}){" "}
-              {Math.round((displayedLieLearnedHistory[0]?.adjustmentBias ?? 0) * 100)}pt →{" "}
-              {Math.round(
-                (displayedLieLearnedHistory[displayedLieLearnedHistory.length - 1]?.adjustmentBias ?? 0) * 100
-              )}pt
-            </div>
-            <div className="flex justify-end">
-              <div className="flex items-end gap-[2px] h-7">
-                {lieLearnedTrendRatios.map((ratio, idx) => (
-                  <div
-                    key={`lie-trend-${p.id}-${idx}`}
-                    className={`w-1.5 rounded-sm ${idx === lieLearnedTrendRatios.length - 1 ? "bg-blue-500" : "bg-blue-200"}`}
-                    style={{ height: `${Math.round(8 + Math.max(0.08, ratio) * 18)}px` }}
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
-        ) : lieLearnedHistoryMode === "overlay" &&
-          (!lieLearnedHistoryAvailable || !lieLearnedHistoryDailyAvailable) ? (
-          <div className="text-[11px] text-slate-400 text-right">重ね表示は raw/daily 両方の履歴DB適用時に利用できます</div>
-        ) : lieLearnedHistoryMode === "overlay" ? (
-          <div className="text-[11px] text-slate-400 text-right">重ね表示に十分な履歴がまだありません（raw/daily を参照）</div>
-        ) : !displayedLieLearnedHistoryAvailable ? (
-          <div className="text-[11px] text-slate-400 text-right">
-            学習係数履歴 ({lieLearnedHistoryMode === "daily" ? "日次集約" : "生履歴"}) DB未適用
-          </div>
-        ) : lieLearnedHistoryMode === "daily" ? (
-          <div className="text-[11px] text-slate-400 text-right">日次集約履歴はまだありません（raw を参照）</div>
-        ) : null}
         {calibratedLie.reasons[0] && (
           <div className="text-[11px] text-slate-500 text-right">{calibratedLie.reasons[0]}</div>
         )}
@@ -1314,7 +1203,7 @@ export default function PostCard({
           ♥ {likes}
         </button>
 
-        {/* 🚀 拡散（Boost） */}
+        {/* 拡散（Boost） */}
         <button
           onClick={toggleBoost}
           disabled={pendingBoost}
@@ -1325,7 +1214,7 @@ export default function PostCard({
           } disabled:opacity-60`}
           title="拡散（フォロワーに広める）"
         >
-          🚀 {boosts}
+          拡散 {boosts}
         </button>
 
         <button
@@ -1336,7 +1225,7 @@ export default function PostCard({
           } disabled:opacity-60`}
           title="保存 / コレクションに追加"
         >
-          🔖 {saves}
+          保存 {saves}
         </button>
         {saved && (
           <div className="flex items-center gap-1">
@@ -1358,7 +1247,7 @@ export default function PostCard({
                 void savePost(true, { key, label: map[key] ?? saveCollectionLabel ?? "保存" });
               }}
               className="px-2 py-1 rounded border bg-white text-xs"
-              title={saveCollectionAvailable ? "保存先コレクション" : "コレクション（DB未設定時は反映されません）"}
+              title="保存先コレクション"
             >
               <option value="saved">保存</option>
               <option value="read_later">後で読む</option>
@@ -1371,7 +1260,7 @@ export default function PostCard({
               <option value="__custom__">+ 新規</option>
             </select>
             {!saveCollectionAvailable && (
-              <span className="text-[10px] opacity-60">DB未適用</span>
+              <span className="text-[10px] opacity-60">整理機能は準備中</span>
             )}
           </div>
         )}
@@ -1388,7 +1277,7 @@ export default function PostCard({
             } disabled:opacity-60`}
             title="本当だと思う"
           >
-            ✅ {voteTrue}
+            本当 {voteTrue}
           </button>
           <button
             onClick={() => castVote(-1)}
@@ -1400,7 +1289,7 @@ export default function PostCard({
             } disabled:opacity-60`}
             title="嘘だと思う"
           >
-            ❌ {voteFalse}
+            違う {voteFalse}
           </button>
         </div>
 
@@ -1422,7 +1311,6 @@ export default function PostCard({
                 } disabled:opacity-60`}
                 title={l.text}
               >
-                <span className="mr-1">{l.emoji}</span>
                 {l.text} {cnt > 0 ? `(${cnt})` : ""}
               </button>
             );
@@ -1436,7 +1324,7 @@ export default function PostCard({
             className="px-2 py-1 rounded border bg-gray-50"
             title="この投稿の返信を表示/非表示"
           >
-            💬 {replyCount}
+            返信 {replyCount}
           </button>
           <Link
             href={`/p/${p.id}`}
@@ -1455,6 +1343,11 @@ export default function PostCard({
       </div>
 
       {/* 返信フォーム */}
+      {actionMessage && (
+        <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+          {actionMessage}
+        </div>
+      )}
       {showReply && (
         <div className="space-y-2">
           <textarea

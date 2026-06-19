@@ -160,10 +160,10 @@ async function findStaticImage(key: string) {
 
 export async function GET(
   req: NextRequest,
-  ctx: { params: Promise<{ key: string }> } | { params: { key: string } }
+  { params }: { params: Promise<{ key: string }> }
 ) {
-  const params = "then" in ctx.params ? await ctx.params : ctx.params;
-  let raw = params.key ?? "";
+  const { key: rawKey } = await params;
+  let raw = rawKey ?? "";
   try {
     raw = decodeURIComponent(raw);
   } catch {

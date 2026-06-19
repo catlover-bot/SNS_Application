@@ -8,6 +8,7 @@ import PromptBar from "@/components/PromptBar";
 import PersonaBadge from "@/components/PersonaBadge";
 import AiTimelineSummaryPanel from "@/components/AiTimelineSummaryPanel";
 import PersonaEvolutionChart from "@/components/PersonaEvolutionChart";
+import SignedInDemoGuide from "@/components/SignedInDemoGuide";
 
 type Soulmate = {
   user_id: string;
@@ -74,10 +75,9 @@ export default function PersonaDashboardPage() {
         const json = await res.json();
         if (!alive) return;
         setSoulmates(json.soulmates ?? []);
-      } catch (e) {
+      } catch {
         if (!alive) return;
-        console.error("soulmates fetch error", e);
-        setError("ソウルメイト候補の取得に失敗しました");
+        setError("相性候補を読み込めませんでした。時間をおいてもう一度お試しください。");
       } finally {
         if (alive) setLoading(false);
       }
@@ -96,14 +96,14 @@ export default function PersonaDashboardPage() {
         const res = await fetch("/api/me/persona-quests", { cache: "no-store" });
         const json = await res.json().catch(() => null);
         if (!res.ok || !json) {
-          throw new Error(json?.error ?? "キャラクエスト取得に失敗しました");
+          throw new Error("キャラクエスト取得に失敗しました");
         }
         if (!alive) return;
         setQuests((json.quests ?? []) as PersonaQuest[]);
         setQuestXp(Number(json.total_xp ?? 0) || 0);
-      } catch (e: any) {
+      } catch {
         if (!alive) return;
-        setQuestError(e?.message ?? "キャラクエスト取得に失敗しました");
+        setQuestError("キャラクエストを読み込めませんでした。時間をおいて再度お試しください。");
         setQuests([]);
       } finally {
         if (alive) setQuestLoading(false);
@@ -123,13 +123,13 @@ export default function PersonaDashboardPage() {
         const res = await fetch("/api/me/persona-insights", { cache: "no-store" });
         const json = await res.json().catch(() => null);
         if (!res.ok || !json) {
-          throw new Error(json?.error ?? "キャラインサイト取得に失敗しました");
+          throw new Error("キャラインサイト取得に失敗しました");
         }
         if (!alive) return;
         setInsight(json as PersonaInsight);
-      } catch (e: any) {
+      } catch {
         if (!alive) return;
-        setInsightError(e?.message ?? "キャラインサイト取得に失敗しました");
+        setInsightError("キャラインサイトを読み込めませんでした。時間をおいて再度お試しください。");
         setInsight(null);
       } finally {
         if (alive) setInsightLoading(false);
@@ -143,10 +143,14 @@ export default function PersonaDashboardPage() {
   return (
     <div className="space-y-6">
       {/* ヘッダ */}
-      <div>
-        <h1 className="text-xl font-bold mb-1">キャラ分析ダッシュボード</h1>
-        <p className="text-sm text-gray-600">
-          あなたのキャラのバランスと、相性の良い「ソウルメイト候補」をまとめて確認できます。
+      <div className="rounded-xl border bg-white p-4">
+        <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+          Persona Insights
+        </div>
+        <h1 className="mt-1 text-2xl font-bold">キャラ分析</h1>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          投稿から見えてきたキャラのバランス、最近の勢い、今日試せるクエストをまとめて確認できます。
+          あなたの言葉がどんな社会的な個性として届いているかを眺める場所です。
         </p>
         <div className="mt-2 flex flex-wrap gap-3 text-sm">
           <Link href="/persona-feed" className="underline">
@@ -157,6 +161,8 @@ export default function PersonaDashboardPage() {
           </Link>
         </div>
       </div>
+
+      {!insightLoading && !insight?.dominant_key ? <SignedInDemoGuide compact /> : null}
 
       {/* 上段：レーダー + プロンプトバー + タイムラインAIサマリー */}
       <div className="grid gap-4 md:grid-cols-2">
@@ -169,7 +175,7 @@ export default function PersonaDashboardPage() {
 
         <div className="space-y-4">
           <div className="border rounded-xl p-4 bg-white shadow-sm">
-            <h2 className="text-sm font-semibold mb-2">AI に相談してみる</h2>
+            <h2 className="text-sm font-semibold mb-2">投稿の相談をしてみる</h2>
             <PromptBar />
           </div>
 
@@ -190,16 +196,22 @@ export default function PersonaDashboardPage() {
         {insightLoading ? (
           <p className="text-sm text-gray-500">キャラインサイトを分析中です…</p>
         ) : insightError ? (
-          <p className="text-sm text-red-500">{insightError}</p>
+          <p className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{insightError}</p>
         ) : !insight?.dominant_key ? (
-          <p className="text-sm text-gray-500">十分な投稿データがありません。</p>
+          <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+            <div className="font-medium text-slate-900">インサイトはこれから育ちます</div>
+            <p className="mt-1">投稿が増えると、主キャラの勢いや投稿内訳が見えるようになります。</p>
+            <Link href="/compose" className="mt-3 inline-flex rounded-full bg-blue-600 px-4 py-2 text-white">
+              投稿する
+            </Link>
+          </div>
         ) : (
           <>
             <div className="grid sm:grid-cols-3 gap-3">
               <div className="rounded-lg border p-3 bg-gray-50">
                 <div className="text-xs text-gray-500">主キャラ連続日数</div>
                 <div className="text-2xl font-bold">{insight.streak_days}</div>
-                <div className="text-xs text-gray-500">days</div>
+                <div className="text-xs text-gray-500">日</div>
               </div>
               <div className="rounded-lg border p-3 bg-gray-50">
                 <div className="text-xs text-gray-500">直近7日投稿数</div>
@@ -262,9 +274,9 @@ export default function PersonaDashboardPage() {
         {questLoading ? (
           <p className="text-sm text-gray-500">クエストを生成中です…</p>
         ) : questError ? (
-          <p className="text-sm text-red-500">{questError}</p>
+          <p className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{questError}</p>
         ) : quests.length === 0 ? (
-          <p className="text-sm text-gray-500">クエストはまだ生成されていません。</p>
+          <p className="text-sm text-gray-500">クエストはまだありません。投稿が増えると、キャラに合わせたお題が表示されます。</p>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {quests.map((q) => (
@@ -305,13 +317,12 @@ export default function PersonaDashboardPage() {
       {/* 下段：恋愛モード・ソウルメイト候補 */}
       <div className="border rounded-xl p-4 bg-white shadow-sm">
         <div className="flex items-center gap-2 mb-2">
-          <span className="text-pink-500 text-lg">💘</span>
           <div>
             <h2 className="text-sm font-semibold">
-              恋愛モード：ソウルメイト候補
+              相性候補
             </h2>
             <p className="text-xs text-gray-500">
-              あなたのメインキャラ × 恋愛相性スコアで、「カップルになると良さそうな相手」をピックアップしています。
+              あなたのメインキャラと相性の良い相手をピックアップしています。
             </p>
           </div>
         </div>
@@ -323,14 +334,13 @@ export default function PersonaDashboardPage() {
         )}
 
         {!loading && error && (
-          <p className="text-sm text-red-500">{error}</p>
+          <p className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>
         )}
 
         {!loading && !error && soulmates.length === 0 && (
-          <p className="text-sm text-gray-500">
-            まだソウルメイト候補が見つかっていません。
-            もう少しポストしたり、キャラ診断を進めてみてください。
-          </p>
+          <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+            まだ相性候補が見つかっていません。もう少し投稿したり、キャラ相性ラボで気になるタイプを試してみてください。
+          </div>
         )}
 
         {!loading && !error && soulmates.length > 0 && (
@@ -338,9 +348,9 @@ export default function PersonaDashboardPage() {
             {soulmates.map((s) => {
               const href = s.handle
                 ? `/u/${encodeURIComponent(s.handle)}`
-                : `/u/${s.user_id}`;
+                : "#";
               const name =
-                s.display_name || s.handle || s.user_id.slice(0, 8);
+                s.display_name || s.handle || "ユーザー";
 
               return (
                 <li
@@ -348,7 +358,7 @@ export default function PersonaDashboardPage() {
                   className="flex items-center gap-3 border rounded-lg p-3 hover:bg-pink-50/40 transition"
                 >
                   {/* アイコン */}
-                  <Link href={href} className="flex-shrink-0">
+                  <Link href={href} className="flex-shrink-0" aria-disabled={!s.handle}>
                     <img
                       src={
                         s.avatar_url ??

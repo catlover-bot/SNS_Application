@@ -362,7 +362,7 @@ export async function GET(req: NextRequest) {
       source: persisted.available ? "persisted" : "default",
       basePersona: baseKey,
       buddyPersona: buddyPersonaKey,
-      warning: postsRes.error.message ?? "rewrite_posts_read_error",
+      warning: "rewrite_learning_degraded",
       context_time_bucket: contextTimeBucket,
       context_weekday_bucket: contextWeekdayBucket,
       ...shaped,
@@ -559,7 +559,7 @@ export async function GET(req: NextRequest) {
         source = "computed_ephemeral";
         finalRows = nextRows;
       } else {
-        warning = up.error.message ?? "rewrite_learning_upsert_error";
+        warning = "rewrite_learning_degraded";
         available = persisted.available;
         source = persisted.available ? "persisted" : "computed_ephemeral";
         finalRows = persisted.available ? persisted.rows : nextRows;
@@ -582,7 +582,7 @@ export async function GET(req: NextRequest) {
         contextAvailable = false;
         finalContextRows = nextContextRows;
       } else {
-        warning = warning ?? upContext.error.message ?? "rewrite_context_learning_upsert_error";
+        warning = warning ?? "rewrite_learning_degraded";
         finalContextRows = persistedContext.rows.length > 0 ? persistedContext.rows : nextContextRows;
       }
     } else {

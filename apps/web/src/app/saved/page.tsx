@@ -64,7 +64,7 @@ export default function SavedPostsPage() {
           offset: nextOffset,
           collection,
         });
-        if (!res.ok) throw new Error(json?.error ?? "保存一覧の取得に失敗しました");
+        if (!res.ok) throw new Error("保存一覧の取得に失敗しました");
         setAvailable(json?.available !== false);
         setCollections(Array.isArray(json?.collections) ? json.collections : []);
         const rows = Array.isArray(json?.items) ? (json.items as SavedItem[]) : [];
@@ -80,7 +80,7 @@ export default function SavedPostsPage() {
           offset: nextOffset + rows.length,
         });
       } catch (e: any) {
-        savedActions.fail(e?.message ?? "保存一覧の取得に失敗しました");
+        savedActions.fail("保存一覧を読み込めませんでした。時間をおいてもう一度お試しください。");
       }
     },
     [items, loading, offset, savedActions, selectedCollection]
@@ -103,7 +103,7 @@ export default function SavedPostsPage() {
 
       {!available && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">
-          コレクションDBが未適用です。`docs/sql/saved_post_collections.sql` を適用すると保存先の管理が有効になります。
+          コレクション整理は準備中です。いまは保存した投稿をまとめて確認できます。
         </div>
       )}
 
@@ -156,10 +156,16 @@ export default function SavedPostsPage() {
           </button>
         </div>
 
-        {error && <div className="text-sm text-red-600">{error}</div>}
+        {error && <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>}
         {!loading && items.length === 0 && !error && (
-          <div className="rounded-xl border bg-white p-4 text-sm opacity-70">
-            保存した投稿はまだありません。
+          <div className="rounded-xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">
+            <div className="font-semibold text-slate-900">保存した投稿はまだありません</div>
+            <p className="mt-1">
+              気になる投稿を保存すると、後から読み返したり、投稿のネタ帳として使えます。
+            </p>
+            <a href="/persona-feed" className="mt-3 inline-flex rounded-full bg-blue-600 px-4 py-2 text-white hover:bg-blue-700">
+              キャラ別TLで探す
+            </a>
           </div>
         )}
 

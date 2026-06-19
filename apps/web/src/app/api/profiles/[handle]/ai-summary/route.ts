@@ -20,13 +20,11 @@ type ProfileAiSummaryRow = {
 
 export async function GET(
   _req: NextRequest,
-  ctx: { params: Promise<{ handle: string }> } | { params: { handle: string } }
+  { params }: { params: Promise<{ handle: string }> }
 ) {
   const supa = await supabaseServer();
 
-  // Next 15/16 の「params が Promise 問題」に対応
-  const awaitedParams = "then" in ctx.params ? await ctx.params : ctx.params;
-  const handle = awaitedParams.handle;
+  const { handle } = await params;
 
   // 1) ハンドルからプロフィールを取得
   const { data: prof, error: profErr } = await supa

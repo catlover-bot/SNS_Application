@@ -78,27 +78,20 @@ export default function SecuritySettingsPage() {
       setErr(null);
       try {
         await refreshUser();
-        const pushRes = await fetch("/api/me/push-delivery/dashboard?days=14", { cache: "no-store" });
-        const pushJson = await pushRes.json().catch(() => null);
-        if (!stop && pushRes.ok && pushJson) {
+        if (!stop) {
           setPushOps({
-            available: !!pushJson.available,
-            queuePending: Number(pushJson.queue?.pending ?? 0) || 0,
-            queueProcessing: Number(pushJson.queue?.processing ?? 0) || 0,
-            oldestPendingMinutes:
-              pushJson.queue?.oldestPendingMinutes == null
-                ? null
-                : Number(pushJson.queue.oldestPendingMinutes) || 0,
-            enabledDevices: Array.isArray(pushJson.devices)
-              ? pushJson.devices.filter((d: any) => d?.enabled !== false).length
-              : 0,
-            totalDevices: Array.isArray(pushJson.devices) ? pushJson.devices.length : 0,
-            deliveryRate: Number(pushJson.summary?.deliveryRate ?? 0) || 0,
-            openRate: Number(pushJson.summary?.openRate ?? 0) || 0,
+            available: false,
+            queuePending: 0,
+            queueProcessing: 0,
+            oldestPendingMinutes: null,
+            enabledDevices: 0,
+            totalDevices: 0,
+            deliveryRate: 0,
+            openRate: 0,
           });
         }
-      } catch (e: any) {
-        if (!stop) setErr(e?.message ?? "アカウント情報の取得に失敗しました。");
+      } catch {
+        if (!stop) setErr("アカウント情報の取得に失敗しました。時間をおいて再度お試しください。");
       } finally {
         if (!stop) setLoading(false);
       }
@@ -131,8 +124,8 @@ export default function SecuritySettingsPage() {
       setMsg("パスワードを更新しました。");
       setNewPassword("");
       setConfirmPassword("");
-    } catch (e: any) {
-      setErr(e?.message ?? "パスワード更新に失敗しました。");
+    } catch {
+      setErr("パスワード更新に失敗しました。時間をおいて再度お試しください。");
     } finally {
       setBusyKey(null);
     }
@@ -151,8 +144,8 @@ export default function SecuritySettingsPage() {
       });
       if (error) throw error;
       setMsg("パスワード再設定メールを送信しました。");
-    } catch (e: any) {
-      setErr(e?.message ?? "メール送信に失敗しました。");
+    } catch {
+      setErr("メール送信に失敗しました。時間をおいて再度お試しください。");
     } finally {
       setBusyKey(null);
     }
@@ -165,8 +158,8 @@ export default function SecuritySettingsPage() {
       const { error } = await (sb.auth as any).signOut({ scope: "others" });
       if (error) throw error;
       setMsg("他の端末からログアウトしました。");
-    } catch (e: any) {
-      setErr(e?.message ?? "他端末ログアウトに失敗しました。");
+    } catch {
+      setErr("他端末ログアウトに失敗しました。時間をおいて再度お試しください。");
     } finally {
       setBusyKey(null);
     }
@@ -183,8 +176,8 @@ export default function SecuritySettingsPage() {
       const { error } = await (sb.auth as any).signOut({ scope: "global" });
       if (error) throw error;
       location.href = "/login?next=/settings/security";
-    } catch (e: any) {
-      setErr(e?.message ?? "全端末ログアウトに失敗しました。");
+    } catch {
+      setErr("全端末ログアウトに失敗しました。時間をおいて再度お試しください。");
       setBusyKey(null);
     }
   };
@@ -302,31 +295,24 @@ export default function SecuritySettingsPage() {
       </div>
 
       <div className="rounded-xl border bg-white p-4 space-y-3">
-        <div className="font-semibold">通知配信 / Push運用</div>
+        <div className="font-semibold">通知の状態</div>
         {!pushOps ? (
-          <p className="text-sm opacity-70">配信状態を読み込み中…</p>
+          <p className="text-sm opacity-70">通知状態を読み込み中…</p>
         ) : !pushOps.available ? (
           <p className="text-sm text-amber-700">
-            Push配信 queue / metrics テーブルが未適用です。migration 適用後に配信監視が有効になります。
+            通知の詳しい状態は準備中です。通知画面では届いた反応を確認できます。
           </p>
         ) : (
           <>
             <div className="text-sm">
-              Push端末: {pushOps.enabledDevices}/{pushOps.totalDevices} 有効
+              通知を受け取れる端末: {pushOps.enabledDevices}/{pushOps.totalDevices}
             </div>
             <div className="text-sm">
               配信率 {Math.round(pushOps.deliveryRate * 100)}% / 開封率 {Math.round(pushOps.openRate * 100)}%
             </div>
-            <div className="text-sm">
-              queue pending {pushOps.queuePending} / processing {pushOps.queueProcessing}
-              {pushOps.oldestPendingMinutes != null ? ` / 最古 ${pushOps.oldestPendingMinutes}分` : ""}
-            </div>
           </>
         )}
         <div className="flex flex-wrap gap-3 text-sm">
-          <a href="/dashboard/push-delivery" className="underline">
-            Push配信ダッシュボード
-          </a>
           <a href="/notifications" className="underline">
             通知画面
           </a>
@@ -352,7 +338,7 @@ export default function SecuritySettingsPage() {
       </div>
 
       {msg ? <div className="text-sm text-emerald-700">{msg}</div> : null}
-      {err ? <div className="text-sm text-red-600">{err}</div> : null}
+      {err ? <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{err}</div> : null}
     </div>
   );
 }

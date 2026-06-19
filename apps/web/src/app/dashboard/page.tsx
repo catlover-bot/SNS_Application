@@ -41,7 +41,7 @@ export default function DashboardPage() {
       .select("user_id,persona_key,title,icon,score,confidence,updated_at")
       .eq("user_id", user.id)
       .maybeSingle();
-    if (error) setErr(error.message);
+    if (error) setErr("キャラ情報を読み込めませんでした。時間をおいて再度お試しください。");
     setP((data as Persona) ?? null);
     return user.id;
   }, []);
@@ -133,12 +133,12 @@ export default function DashboardPage() {
           confidence: Math.max(0, Math.min(1, Number(top.confidence ?? 0))),
           updated_at: new Date().toISOString(),
         });
-        setErr("DB権限またはRPC未設定のため、投稿履歴ベースの暫定キャラを表示しています。");
+        setErr("保存済みのキャラ情報を更新できなかったため、投稿履歴から推定したキャラを表示しています。");
       } else {
         setErr(null);
       }
-    } catch (e: any) {
-      setErr(e?.message ?? "再評価に失敗しました");
+    } catch {
+      setErr("キャラの再評価に失敗しました。時間をおいて再度お試しください。");
     } finally {
       setBusy(false);
     }
@@ -146,8 +146,15 @@ export default function DashboardPage() {
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
-      <div className="flex items-center gap-3">
-        <h1 className="text-xl font-semibold">ダッシュボード</h1>
+      <div className="rounded-xl border bg-white p-4">
+        <div className="flex flex-wrap items-start gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">My Persona</div>
+            <h1 className="mt-1 text-2xl font-bold">ダッシュボード</h1>
+            <p className="mt-2 text-sm text-slate-600">
+              自分の投稿と現在のキャラ傾向をまとめて確認できます。
+            </p>
+          </div>
         <button
           onClick={recompute}
           disabled={busy}
@@ -155,11 +162,12 @@ export default function DashboardPage() {
         >
           {busy ? "再評価中…" : "キャラを再評価"}
         </button>
+        </div>
       </div>
 
       <section className="rounded border bg-white p-4">
         <h2 className="font-medium mb-3">あなたのキャラ</h2>
-        {err && <div className="text-sm text-red-600">{err}</div>}
+        {err && <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{err}</div>}
 
         {!p ? (
           <div className="text-sm opacity-70">
@@ -168,7 +176,7 @@ export default function DashboardPage() {
         ) : (
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-full border bg-white flex items-center justify-center text-xl">
-              {p.icon ?? "🧩"}
+              {p.icon ?? "P"}
             </div>
             <div>
               <div className="text-lg font-semibold">{p.title ?? p.persona_key}</div>

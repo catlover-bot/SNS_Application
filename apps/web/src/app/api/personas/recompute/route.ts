@@ -1,5 +1,6 @@
 // POST /api/personas/recompute
 import { NextResponse } from "next/server";
+import { safeJsonError } from "@/lib/apiSecurity";
 import { supabaseServer } from "@/lib/supabase/server";
 import { derivePersonaRowsFromSignals } from "@/lib/personaAssignment";
 
@@ -16,7 +17,7 @@ export async function POST() {
   // 1) 既存RPCがあれば優先利用
   const rpc = await supabase.rpc("assign_top_persona", { p_user: user.id });
   if (!rpc.error) {
-    return NextResponse.json({ ok: true, method: "rpc" });
+    return NextResponse.json({ ok: true, persisted: true });
   }
 
   // 2) RPCが無い/失敗時は投稿履歴からフォールバック再計算
@@ -27,10 +28,7 @@ export async function POST() {
     .order("created_at", { ascending: false })
     .limit(600);
   if (postsRes.error) {
-    return NextResponse.json(
-      { ok: false, error: postsRes.error.message, method: "fallback_posts_error" },
-      { status: 500 }
-    );
+    return safeJsonError("persona_recompute_failed", 500);
   }
 
   const posts = (postsRes.data ?? []) as Array<{
@@ -41,9 +39,8 @@ export async function POST() {
   if (!posts.length) {
     return NextResponse.json({
       ok: true,
-      method: "fallback_empty",
       personas: [],
-      warning: rpc.error?.message ?? "assign_top_persona_failed",
+      warning: "persona_recompute_degraded",
     });
   }
 
@@ -64,9 +61,8 @@ export async function POST() {
   if (!derived.length) {
     return NextResponse.json({
       ok: true,
-      method: "fallback_no_persona",
       personas: [],
-      warning: rpc.error?.message ?? "assign_top_persona_failed",
+      warning: "persona_recompute_degraded",
     });
   }
 
@@ -106,10 +102,9 @@ export async function POST() {
 
   return NextResponse.json({
     ok: true,
-    method: persisted ? "fallback_persisted" : "fallback_derived_only",
     personas: derived,
     persisted,
-    warning: rpc.error?.message ?? "assign_top_persona_failed",
-    persist_error: persistError?.message ?? null,
+    warning: persisted ? null : "persona_recompute_degraded",
+    persist_error: persistError ? "persona_recompute_persist_failed" : null,
   });
 }

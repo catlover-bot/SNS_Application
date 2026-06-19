@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRateLimit, requireSameOrigin } from "@/lib/apiSecurity";
+import { requireRateLimit, requireSameOrigin, safeJsonError } from "@/lib/apiSecurity";
 import { supabaseServer } from "@/lib/supabase/server";
 
 function isMissingRelationError(err: any, relation: string) {
@@ -69,8 +69,8 @@ async function loadSaveState(supa: any, userId: string, postId: string) {
   };
 }
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const { id } = params;
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const postId = String(id ?? "").trim();
   if (!postId) return NextResponse.json({ error: "invalid_post_id" }, { status: 400 });
 
@@ -84,11 +84,11 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   return NextResponse.json({ ok: true, postId, ...state });
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const originErr = requireSameOrigin(req, { allowMissingOrigin: false });
   if (originErr) return originErr;
 
-  const { id } = params;
+  const { id } = await params;
   const postId = String(id ?? "").trim();
   if (!postId) return NextResponse.json({ ok: false, error: "invalid_post_id" }, { status: 400 });
 
@@ -125,10 +125,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         { onConflict: "post_id,user_id,kind" }
       );
     if (saveIns.error) {
-      return NextResponse.json(
-        { ok: false, error: saveIns.error.message ?? "save_insert_failed" },
-        { status: 400 }
-      );
+      return safeJsonError("save_failed", 400);
     }
 
     const collUp = await supa.from("user_saved_post_collections").upsert(
@@ -144,10 +141,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const collectionDegraded =
       !!collUp.error && isMissingRelationError(collUp.error, "user_saved_post_collections");
     if (collUp.error && !collectionDegraded) {
-      return NextResponse.json(
-        { ok: false, error: collUp.error.message ?? "collection_upsert_failed" },
-        { status: 400 }
-      );
+      return safeJsonError("save_collection_failed", 400);
     }
 
     const state = await loadSaveState(supa, user.id, postId);
@@ -163,11 +157,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   return clearSaveState({ supa, userId: user.id, postId });
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const originErr = requireSameOrigin(req, { allowMissingOrigin: false });
   if (originErr) return originErr;
 
-  const { id } = params;
+  const { id } = await params;
   const postId = String(id ?? "").trim();
   if (!postId) return NextResponse.json({ ok: false, error: "invalid_post_id" }, { status: 400 });
 
@@ -204,16 +198,10 @@ async function clearSaveState(args: { supa: any; userId: string; postId: string 
   const collectionDegraded =
     !!delCollection.error && isMissingRelationError(delCollection.error, "user_saved_post_collections");
   if (delReaction.error) {
-    return NextResponse.json(
-      { ok: false, error: delReaction.error.message ?? "save_delete_failed" },
-      { status: 400 }
-    );
+    return safeJsonError("save_remove_failed", 400);
   }
   if (delCollection.error && !collectionDegraded) {
-    return NextResponse.json(
-      { ok: false, error: delCollection.error.message ?? "collection_delete_failed" },
-      { status: 400 }
-    );
+    return safeJsonError("save_collection_remove_failed", 400);
   }
   const state = await loadSaveState(args.supa, args.userId, args.postId);
   return NextResponse.json({

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireRateLimit, requireSameOrigin } from "@/lib/apiSecurity";
+import { requireRateLimit, requireSameOrigin, safeJsonError } from "@/lib/apiSecurity";
 import { supabaseServer } from "@/lib/supabase/server";
 
 function isMissingRelationError(err: any, table = "user_reports") {
@@ -44,10 +44,7 @@ export async function POST(req: Request) {
   });
 
   if (ins.error) {
-    const message = isMissingRelationError(ins.error)
-      ? "user_reports table is missing. Apply docs/sql/app_store_safety.sql first."
-      : ins.error.message;
-    return NextResponse.json({ ok: false, error: message }, { status: 400 });
+    return safeJsonError(isMissingRelationError(ins.error) ? "report_unavailable" : "report_failed", 400);
   }
 
   return NextResponse.json({ ok: true });

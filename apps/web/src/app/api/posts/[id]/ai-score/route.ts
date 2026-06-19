@@ -1,26 +1,16 @@
 // apps/web/src/app/api/posts/[id]/ai-score/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { safeJsonError } from "@/lib/apiSecurity";
 import { supabaseServer } from "@/lib/supabase/server";
 import { getLieJudge } from "@/lib/ai/lieJudge";
 
-// Next.js 16 で params が Promise になるケースに対応
 type RouteContext = {
-  params: { id: string } | Promise<{ id: string }>;
+  params: Promise<{ id: string }>;
 };
-
-async function resolveParams(
-  ctx: RouteContext
-): Promise<{ id: string }> {
-  const p = ctx.params as any;
-  if (p && typeof p.then === "function") {
-    return await p;
-  }
-  return p as { id: string };
-}
 
 // GET: 既存の AI スコアを取得
 export async function GET(req: NextRequest, ctx: RouteContext) {
-  const { id: postId } = await resolveParams(ctx);
+  const { id: postId } = await ctx.params;
   const supa = await supabaseServer();
 
   const { data, error } = await supa
@@ -31,10 +21,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 
   if (error) {
     console.error("[GET /api/posts/[id]/ai-score] error", error);
-    return NextResponse.json(
-      { error: "internal_error", message: error.message },
-      { status: 500 }
-    );
+    return safeJsonError("ai_score_unavailable", 500);
   }
 
   if (!data) {
@@ -47,7 +34,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 
 // POST: LLM で判定して ai_post_scores に upsert
 export async function POST(req: NextRequest, ctx: RouteContext) {
-  const { id: postId } = await resolveParams(ctx);
+  const { id: postId } = await ctx.params;
   const supa = await supabaseServer();
 
   // 認証ユーザー
@@ -75,10 +62,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       "[POST /api/posts/[id]/ai-score] post fetch error",
       postError
     );
-    return NextResponse.json(
-      { error: "internal_error", message: postError.message },
-      { status: 500 }
-    );
+    return safeJsonError("post_unavailable", 500);
   }
 
   if (!post) {
@@ -103,15 +87,9 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     });
   } catch (e: any) {
     console.error("[lieJudge] error", e);
-    return NextResponse.json(
-      {
-        error: "llm_error",
-        message:
-          e?.message ??
-          "AI 判定処理中にエラーが発生しました。時間をおいて再度お試しください。",
-      },
-      { status: 500 }
-    );
+    return safeJsonError("ai_score_failed", 500, {
+      message: "AI 判定処理中にエラーが発生しました。時間をおいて再度お試しください。",
+    });
   }
 
   const dims = aiResult.dimensions ?? {};
@@ -146,13 +124,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       "[POST /api/posts/[id]/ai-score] upsert error",
       upsertError
     );
-    return NextResponse.json(
-      {
-        error: "internal_error",
-        message: upsertError.message,
-      },
-      { status: 500 }
-    );
+    return safeJsonError("ai_score_save_failed", 500);
   }
 
   return NextResponse.json(saved);

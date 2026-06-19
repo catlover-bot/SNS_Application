@@ -99,3 +99,14 @@ export function requireRateLimit(args: {
   globalBuckets.set(args.key, bucket);
   return null;
 }
+
+export function safeJsonError(error: string, status = 500, extra?: Record<string, unknown>) {
+  return NextResponse.json(
+    {
+      ok: false,
+      error,
+      ...(extra ?? {}),
+    },
+    { status }
+  );
+}

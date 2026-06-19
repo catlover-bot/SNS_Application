@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { safeJsonError } from "@/lib/apiSecurity";
 import { supabaseServer } from "@/lib/supabase/server";
 
 type MissionRow = {
@@ -326,10 +327,7 @@ export async function GET(req: NextRequest) {
         missions: [],
       });
     }
-    return NextResponse.json(
-      { error: todayRes.error.message ?? "mission_progress_read_error" },
-      { status: 500 }
-    );
+    return safeJsonError("mission_progress_unavailable", 500);
   }
 
   const streakLoad = await loadStreakRows({
@@ -447,10 +445,7 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
 
   if (cur.error && !isMissingRelationError(cur.error, "user_persona_buddy_mission_progress")) {
-    return NextResponse.json(
-      { error: cur.error.message ?? "mission_progress_load_error" },
-      { status: 500 }
-    );
+    return safeJsonError("mission_progress_unavailable", 500);
   }
   if (cur.error && isMissingRelationError(cur.error, "user_persona_buddy_mission_progress")) {
     return NextResponse.json({
@@ -521,10 +516,7 @@ export async function POST(req: NextRequest) {
         },
       });
     }
-    return NextResponse.json(
-      { error: up.error.message ?? "mission_progress_write_error" },
-      { status: 500 }
-    );
+    return safeJsonError("mission_progress_save_failed", 500);
   }
 
   const streakLoad = await loadStreakRows({

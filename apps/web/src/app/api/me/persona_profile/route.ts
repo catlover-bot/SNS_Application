@@ -1,5 +1,6 @@
 // apps/web/src/app/api/me/persona_profile/route.ts
 import { NextResponse } from "next/server";
+import { safeJsonError } from "@/lib/apiSecurity";
 import { supabaseServer } from "@/lib/supabase/server";
 import { derivePersonaRowsFromSignals } from "@/lib/personaAssignment";
 
@@ -29,7 +30,7 @@ export async function GET() {
 
   if (pErr) {
     console.error("[/api/me/persona_profile] user_personas error:", pErr.message);
-    return NextResponse.json({ error: pErr.message }, { status: 500 });
+    return safeJsonError("persona_profile_unavailable", 500);
   }
 
   let finalPersonas = personas ?? [];

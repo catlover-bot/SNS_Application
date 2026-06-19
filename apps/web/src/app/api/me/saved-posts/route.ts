@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { safeJsonError } from "@/lib/apiSecurity";
 import { supabaseServer } from "@/lib/supabase/server";
 
 function clampInt(v: string | null, min: number, max: number, def: number) {
@@ -60,10 +61,7 @@ export async function GET(req: NextRequest) {
         total: 0,
       });
     }
-    return NextResponse.json(
-      { error: pageRes.error.message ?? "saved_posts_read_failed" },
-      { status: 500 }
-    );
+    return safeJsonError("saved_posts_unavailable", 500);
   }
 
   const savedRows = (pageRes.data ?? []) as SavedRow[];
@@ -145,4 +143,3 @@ export async function GET(req: NextRequest) {
     },
   });
 }
-

@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import Link from "next/link";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { supabaseServer } from "@/lib/supabase/server";
 
 type Item = {
@@ -19,15 +20,25 @@ function anchorId(label: string) {
 }
 
 export default async function PersonasCatalogPage() {
-  const supa = await supabaseServer();
-  const { data, error } = await supa
-    .from("persona_archetype_defs")
-    .select("key,title,blurb,image_url,theme,category")
-    .order("category", { ascending: true })
-    .order("title", { ascending: true });
+  let items: Item[] = [];
+  let hasError = false;
 
-  const items: Item[] = data ?? [];
-  const errMsg = error?.message;
+  if (isSupabaseConfigured()) {
+    try {
+      const supa = await supabaseServer();
+      const { data, error } = await supa
+        .from("persona_archetype_defs")
+        .select("key,title,blurb,image_url,theme,category")
+        .order("category", { ascending: true })
+        .order("title", { ascending: true });
+
+      items = (data ?? []) as Item[];
+      hasError = Boolean(error);
+    } catch {
+      hasError = true;
+      items = [];
+    }
+  }
 
   // カテゴリごとにグルーピング（空は "General" 扱いに）
   const groups = new Map<string, Item[]>();
@@ -42,10 +53,18 @@ export default async function PersonasCatalogPage() {
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-6">
       <header className="space-y-3">
-        <h1 className="text-2xl font-bold">キャラ図鑑</h1>
-        {errMsg && (
-          <div className="rounded border bg-red-50 text-red-700 p-3 text-sm">
-            キャラ一覧の取得に失敗しました：{errMsg}
+        <div className="rounded-xl border bg-white p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+            Persona Catalog
+          </div>
+          <h1 className="mt-1 text-2xl font-bold">キャラ図鑑</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            投稿から見えてくるキャラの一覧です。自分の投稿がどのタイプに近いか、相性の良い相手は誰かを探せます。
+          </p>
+        </div>
+        {hasError && (
+          <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+            キャラ一覧を読み込めませんでした。時間をおいて再度お試しください。
           </div>
         )}
         {items.length > 0 && (
@@ -64,7 +83,20 @@ export default async function PersonasCatalogPage() {
       </header>
 
       {items.length === 0 ? (
-        <div className="opacity-70 text-sm">登録済みのキャラが見つかりませんでした。</div>
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">
+          <div className="font-semibold text-slate-900">キャラ図鑑は準備中です</div>
+          <p className="mt-1">
+            データ接続後は、投稿から見えたキャラや相性の良いタイプをここで探せます。
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link href="/compose" className="rounded-full bg-blue-600 px-4 py-2 text-white">
+              投稿する
+            </Link>
+            <Link href="/persona-lab" className="rounded-full border border-slate-200 bg-white px-4 py-2">
+              相性ラボへ
+            </Link>
+          </div>
+        </div>
       ) : (
         <div className="space-y-10">
           {categories.map((cat) => {
@@ -83,7 +115,7 @@ export default async function PersonasCatalogPage() {
                       <Link
                         key={r.key}
                         href={`/personas/${encodeURIComponent(r.key)}`}
-                        className="group block rounded-2xl border bg-white overflow-hidden hover:shadow-md transition"
+                        className="group block overflow-hidden rounded-lg border bg-white transition hover:shadow-md"
                       >
                         <div className="w-full aspect-square flex items-center justify-center bg-white">
                           {/* 最も一般的なファイル名を優先。派生(_legend/_lite)は詳細ページ側のマルチフォールバックで吸収 */}

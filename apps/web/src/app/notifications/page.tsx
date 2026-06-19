@@ -62,12 +62,12 @@ export default function NotificationsPage() {
 
       const { res, json } = await fetchNotificationsList();
       if (!res.ok) {
-        throw new Error(json?.error ?? "通知の取得に失敗しました");
+        throw new Error("通知の取得に失敗しました");
       }
       const nextItems = (json?.items ?? []) as NotificationItem[];
       listActions.replace(nextItems, { hasMore: false, offset: nextItems.length });
     } catch (e: any) {
-      listActions.fail(e?.message ?? "通知の取得に失敗しました");
+      listActions.fail("通知を読み込めませんでした。時間をおいてもう一度お試しください。");
     }
   }, [listActions, sb]);
 
@@ -105,7 +105,7 @@ export default function NotificationsPage() {
     try {
       const { res, json } = await markNotificationsReadApi(ids);
       if (!res.ok) {
-        throw new Error(json?.error ?? "既読化に失敗しました");
+        throw new Error("既読化に失敗しました");
       }
       const nowIso = new Date().toISOString();
       listActions.replace(
@@ -116,7 +116,7 @@ export default function NotificationsPage() {
         }
       );
     } catch (e: any) {
-      listActions.fail(e?.message ?? "既読化に失敗しました");
+      listActions.fail("通知を既読にできませんでした。もう一度お試しください。");
     } finally {
       setBusyRead(false);
     }
@@ -137,8 +137,14 @@ export default function NotificationsPage() {
 
   return (
     <div className="space-y-4 max-w-3xl mx-auto p-6">
-      <div className="flex items-center">
-        <h1 className="text-xl font-semibold">通知</h1>
+      <div className="rounded-xl border bg-white p-4">
+        <div className="flex items-start gap-3">
+          <div>
+            <h1 className="text-2xl font-bold">通知</h1>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              返信、保存につながる反応、フォローなど、会話のきっかけをまとめて確認できます。
+            </p>
+          </div>
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs rounded-full border px-2 py-1 bg-gray-50">
             未読 {unreadIds.length}
@@ -151,6 +157,7 @@ export default function NotificationsPage() {
           >
             すべて既読
           </button>
+        </div>
         </div>
       </div>
 
@@ -178,15 +185,20 @@ export default function NotificationsPage() {
       </div>
 
       {error && (
-        <div className="rounded border bg-red-50 text-red-700 text-sm p-3">{error}</div>
+        <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>
       )}
 
       {loading ? (
-        <div className="opacity-60 text-sm">読み込み中…</div>
+        <div className="rounded-lg border bg-white p-4 text-sm text-slate-500">読み込み中…</div>
       ) : items.length === 0 ? (
-        <div className="opacity-60 text-sm">通知はまだありません。</div>
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">
+          <div className="font-semibold text-slate-900">通知はまだありません</div>
+          <p className="mt-1">投稿や返信が増えると、ここに反応が届きます。</p>
+        </div>
       ) : filteredItems.length === 0 ? (
-        <div className="opacity-60 text-sm">この種類の通知はまだありません。</div>
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">
+          この種類の通知はまだありません。
+        </div>
       ) : (
         <div className="space-y-3">
           {freshItems.length > 0 && (

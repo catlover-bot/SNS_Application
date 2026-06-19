@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { safeJsonError } from "@/lib/apiSecurity";
 import { supabaseServer } from "@/lib/supabase/server";
 
 type ReactionRow = { post_id?: string | null; kind?: string | null; created_at?: string | null };
@@ -288,8 +289,8 @@ function buildHighlights(args: { analysis: any; current: ReturnType<typeof summa
   return Array.from(new Set(highlights)).slice(0, 4);
 }
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const { id } = params;
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const postId = String(id ?? "").trim();
   if (!postId) return NextResponse.json({ error: "invalid_post_id" }, { status: 400 });
 
@@ -304,9 +305,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     .select("id,author,created_at,text,score,analysis")
     .eq("id", postId)
     .maybeSingle();
-  if (postRes.error) {
-    return NextResponse.json({ error: postRes.error.message ?? "post_read_failed" }, { status: 500 });
-  }
+  if (postRes.error) return safeJsonError("post_performance_unavailable", 500);
   const post = postRes.data as any;
   if (!post) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (String(post.author ?? "").trim() !== user.id) {

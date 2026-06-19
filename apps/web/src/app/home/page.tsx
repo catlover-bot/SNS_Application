@@ -17,6 +17,7 @@ import {
 } from "@sns/core";
 import { fetchFeedPage, fetchTimelineSignals, updateTimelineSignalWeights } from "@/lib/socialDataClient";
 import { useSocialFeedState } from "@/lib/useSocialListState";
+import SignedInDemoGuide from "@/components/SignedInDemoGuide";
 
 type FeedItem = {
   id: string;
@@ -47,6 +48,7 @@ export default function HomeFeed() {
   const weightsPersistSigRef = useRef<string>("");
   const rawItems = feedState.items;
   const loading = feedState.loading;
+  const error = feedState.error;
   const ended = !feedState.hasMore;
   const interestedAuthorIds = useMemo(() => {
     const s = new Set<string>();
@@ -330,6 +332,34 @@ export default function HomeFeed() {
 
   return (
     <div className="max-w-2xl mx-auto p-4 space-y-4">
+      <header className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+          For You Timeline
+        </div>
+        <h1 className="mt-1 text-2xl font-bold">あなた向けタイムライン</h1>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          開いた投稿、保存した投稿、フォローした相手からおすすめの重みが育ちます。
+          キャラ傾向と相性も混ぜながら、次に読みたくなる投稿を並べます。
+        </p>
+      </header>
+
+      {items.length === 0 && !loading ? <SignedInDemoGuide /> : null}
+
+      {error && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+          <div className="font-medium">タイムラインを読み込めませんでした</div>
+          <p className="mt-1">時間をおいてもう一度お試しください。</p>
+          <button
+            type="button"
+            onClick={() => void loadMore()}
+            className="mt-3 rounded-full border border-rose-200 bg-white px-3 py-1.5 hover:bg-rose-100"
+            disabled={loading}
+          >
+            {loading ? "読み込み中…" : "再読み込み"}
+          </button>
+        </div>
+      )}
+
       {(timelineHighlights.popular.length > 0 || timelineHighlights.forYou.length > 0) && (
         <section className="space-y-3 rounded-xl border bg-white p-3">
           <div className="flex items-center justify-between">
@@ -359,11 +389,8 @@ export default function HomeFeed() {
                 <p className="text-[11px] text-slate-400">
                   {timelineLearningSummary.stageLabel} / 更新 {timelineSignalWeightsSamples}回（フォロー/保存/開封を反映）
                 </p>
-                <a
-                  href="/dashboard/timeline-learning"
-                  className="text-[11px] underline text-blue-700 whitespace-nowrap"
-                >
-                  学習/おすすめ
+                <a href="/persona-feed" className="text-[11px] underline text-blue-700 whitespace-nowrap">
+                  キャラTLを見る
                 </a>
               </div>
               {timelineWeightTrendBars.length > 1 && (
@@ -548,8 +575,30 @@ export default function HomeFeed() {
         </section>
       )}
 
+      {!loading && !error && items.length === 0 && (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">
+          <div className="font-semibold text-slate-900">タイムラインはこれから育ちます</div>
+          <p className="mt-1">
+            投稿を読む、保存する、フォローするほどおすすめがあなたのキャラに近づきます。
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <a href="/compose" className="rounded-full bg-blue-600 px-4 py-2 text-white hover:bg-blue-700">
+              投稿する
+            </a>
+            <a href="/persona-feed" className="rounded-full border border-slate-200 bg-white px-4 py-2 hover:bg-slate-50">
+              キャラ別TLへ
+            </a>
+            <a href="/search" className="rounded-full border border-slate-200 bg-white px-4 py-2 hover:bg-slate-50">
+              投稿を探す
+            </a>
+          </div>
+        </div>
+      )}
+
       {!loading && items.length > 0 && freshItems.length === 0 && pastItems.length === 0 && (
-        <div className="text-sm opacity-70">投稿はまだありません。</div>
+        <div className="rounded-xl border bg-white p-4 text-sm text-slate-600">
+          表示できる投稿がありません。条件を変えて再読み込みしてください。
+        </div>
       )}
 
       <div className="py-4 flex justify-center">

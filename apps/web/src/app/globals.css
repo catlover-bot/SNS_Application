@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
 :root { color-scheme: light; }
-html, body { height: 100%; }
-body { @apply bg-gray-50 text-gray-900; }
+html, body { min-height: 100%; }
+body { @apply bg-slate-50 text-slate-950 antialiased; }
+a { text-underline-offset: 3px; }
+::selection { @apply bg-blue-100 text-blue-950; }

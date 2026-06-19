@@ -1,5 +1,7 @@
 // apps/web/src/app/api/persona_defs/route.ts
 import { NextResponse } from "next/server";
+import { safeJsonError } from "@/lib/apiSecurity";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { supabaseServer } from "@/lib/supabase/server";
 
 export async function GET(req: Request) {
@@ -11,6 +13,10 @@ export async function GET(req: Request) {
       { error: "key is required" },
       { status: 400 }
     );
+  }
+
+  if (!isSupabaseConfigured()) {
+    return safeJsonError("service_unavailable", 503);
   }
 
   const supa = await supabaseServer();
@@ -32,10 +38,7 @@ export async function GET(req: Request) {
 
   if (error) {
     console.error("[persona_defs api] detail error", error);
-    return NextResponse.json(
-      { error: "failed to load persona" },
-      { status: 500 }
-    );
+    return safeJsonError("persona_unavailable", 500);
   }
 
   if (!data) {

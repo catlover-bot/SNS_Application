@@ -1,7 +1,7 @@
 // apps/web/src/components/Replies.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabaseClient as supabase } from "@/lib/supabase/client";
 import PostCard from "@/components/PostCard";
 
@@ -24,22 +24,33 @@ export default function Replies({ postId }: { postId: string }) {
   const sb = useMemo(() => supabase(), []);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  async function fetchReplies() {
-    const rs = await sb
-      .from("v_posts_enriched")
-      .select("*")
-      .eq("parent_id", postId)
-      .order("created_at", { ascending: true });
+  const fetchReplies = useCallback(async (isCurrent: () => boolean = () => true) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const rs = await sb
+        .from("v_posts_enriched")
+        .select("*")
+        .eq("parent_id", postId)
+        .order("created_at", { ascending: true });
 
-    setRows(((rs.data as unknown) as Row[]) ?? []);
-    setLoading(false);
-  }
+      if (rs.error) throw rs.error;
+      if (!isCurrent()) return;
+      setRows(((rs.data as unknown) as Row[]) ?? []);
+    } catch {
+      if (!isCurrent()) return;
+      setRows([]);
+      setError("返信を読み込めませんでした。時間をおいてもう一度お試しください。");
+    } finally {
+      if (isCurrent()) setLoading(false);
+    }
+  }, [postId, sb]);
 
   useEffect(() => {
     let alive = true;
-    setLoading(true);
-    fetchReplies();
+    void fetchReplies(() => alive);
 
     // Realtime: 返信の追加を購読
     const channel = sb
@@ -54,7 +65,7 @@ export default function Replies({ postId }: { postId: string }) {
             .select("*")
             .eq("id", (payload.new as any).id)
             .maybeSingle();
-          if (r.data) setRows((prev) => [...prev, r.data as Row]);
+          if (r.data) setRows((prev) => (prev.some((x) => x.id === (r.data as Row).id) ? prev : [...prev, r.data as Row]));
         }
       )
       .subscribe();
@@ -63,9 +74,19 @@ export default function Replies({ postId }: { postId: string }) {
       alive = false;
       sb.removeChannel(channel);
     };
-  }, [postId, sb]);
+  }, [fetchReplies, postId, sb]);
 
   if (loading) return <div className="pl-4 border-l text-sm opacity-70">返信を読み込み中…</div>;
+  if (error) {
+    return (
+      <div className="pl-4 border-l space-y-2 text-sm">
+        <div className="text-rose-700">{error}</div>
+        <button type="button" className="underline" onClick={() => void fetchReplies()}>
+          再読み込み
+        </button>
+      </div>
+    );
+  }
   if (!rows.length) return <div className="pl-4 border-l text-sm opacity-70">まだ返信はありません。</div>;
 
   return (

@@ -58,20 +58,14 @@ export default function ProfileSettings() {
         setAvatar(prof.avatar_url ?? null);
       }
 
-      const pushRes = await fetch("/api/me/push-delivery/dashboard?days=14", { cache: "no-store" });
-      const pushJson = await pushRes.json().catch(() => null);
-      if (pushRes.ok && pushJson) {
-        setPushSummary({
-          available: !!pushJson.available,
-          queuePending: Number(pushJson.queue?.pending ?? 0) || 0,
-          deliveryRate: Number(pushJson.summary?.deliveryRate ?? 0) || 0,
-          openRate: Number(pushJson.summary?.openRate ?? 0) || 0,
-          enabledDevices: Array.isArray(pushJson.devices)
-            ? pushJson.devices.filter((d: any) => d?.enabled !== false).length
-            : 0,
-          totalDevices: Array.isArray(pushJson.devices) ? pushJson.devices.length : 0,
-        });
-      }
+      setPushSummary({
+        available: false,
+        queuePending: 0,
+        deliveryRate: 0,
+        openRate: 0,
+        enabledDevices: 0,
+        totalDevices: 0,
+      });
 
       const tlRes = await fetch("/api/me/timeline-signals", { cache: "no-store" });
       const tlJson = await tlRes.json().catch(() => null);
@@ -135,6 +129,7 @@ export default function ProfileSettings() {
   );
 
   async function save() {
+    if (saving) return;
     if (!uid) return;
     setSaving(true);
     setMsg(null);
@@ -146,41 +141,47 @@ export default function ProfileSettings() {
       return;
     }
 
-    let avatar_url = avatar;
-    if (file) {
-      const ext = file.name.split(".").pop() || "jpg";
-      const path = `${uid}/${crypto.randomUUID()}.${ext}`;
-      const { error } = await sb.storage.from("avatars").upload(path, file);
-      if (error) {
-        setMsg("アイコンのアップロードに失敗しました: " + error.message);
-        setSaving(false);
-        return;
+    try {
+      let avatar_url = avatar;
+      if (file) {
+        const ext = file.name.split(".").pop() || "jpg";
+        const path = `${uid}/${crypto.randomUUID()}.${ext}`;
+        const { error } = await sb.storage.from("avatars").upload(path, file);
+        if (error) {
+          setMsg("アイコンのアップロードに失敗しました。画像を変えるか、時間をおいて再度お試しください。");
+          return;
+        }
+        avatar_url = sb.storage.from("avatars").getPublicUrl(path).data.publicUrl;
       }
-      avatar_url = sb.storage.from("avatars").getPublicUrl(path).data.publicUrl;
-    }
 
-    const { error: upErr } = await sb
-      .from("profiles")
-      .update({
-        handle,
-        display_name: displayName || null,
-        bio: bio || null,
-        avatar_url,
-      })
-      .eq("id", uid);
+      const { error: upErr } = await sb
+        .from("profiles")
+        .update({
+          handle,
+          display_name: displayName || null,
+          bio: bio || null,
+          avatar_url,
+        })
+        .eq("id", uid);
 
-    if (upErr) {
-      setMsg(
-        upErr.code === "23505"
-          ? "そのユーザー名は既に使われています。"
-          : upErr.code === "23514"
-          ? "ユーザー名の形式が不正です。"
-          : upErr.message
-      );
-    } else {
-      setMsg("保存しました。");
+      if (upErr) {
+        setMsg(
+          upErr.code === "23505"
+            ? "そのユーザー名は既に使われています。"
+            : upErr.code === "23514"
+            ? "ユーザー名の形式が不正です。"
+            : "プロフィールを保存できませんでした。時間をおいて再度お試しください。"
+        );
+      } else {
+        setAvatar(avatar_url);
+        setFile(null);
+        setMsg("保存しました。");
+      }
+    } catch {
+      setMsg("プロフィールを保存できませんでした。時間をおいて再度お試しください。");
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   }
 
   async function deleteAccount() {
@@ -202,16 +203,21 @@ export default function ProfileSettings() {
       }
       await sb.auth.signOut();
       location.href = "/";
-    } catch (e: any) {
-      setMsg(e?.message ?? "アカウント削除に失敗しました");
+    } catch {
+      setMsg("アカウント削除に失敗しました。時間をおいて再度お試しください。");
     } finally {
       setDeleting(false);
     }
   }
 
   return (
-    <div className="space-y-4 max-w-xl">
-      <h1 className="text-xl font-bold">プロフィール編集</h1>
+    <div className="mx-auto max-w-2xl space-y-4">
+      <header className="rounded-xl border bg-white p-4">
+        <h1 className="text-2xl font-bold">プロフィール編集</h1>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          表示名、自己紹介、アイコンを整えると、投稿とキャラ分析が見つけてもらいやすくなります。
+        </p>
+      </header>
 
       <div className="flex items-center gap-3">
         <img
@@ -255,7 +261,7 @@ export default function ProfileSettings() {
         disabled={saving}
         className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
       >
-        保存
+        {saving ? "保存中…" : "プロフィールを保存"}
       </button>
 
       <div className="border rounded-lg p-4 space-y-3 bg-white">
@@ -348,42 +354,39 @@ export default function ProfileSettings() {
           <div className="text-sm opacity-70">{timelineLearningSummary.historyEmptyHint}</div>
         )}
         <div className="flex flex-wrap gap-3 text-sm">
-          <a href="/dashboard/timeline-learning" className="underline">
-            {timelineLearningSummary.title} を詳しく見る
+          <a href="/home" className="underline">
+            ホームTLを見る
           </a>
         </div>
       </div>
 
       <div className="border rounded-lg p-4 space-y-2 bg-white">
-        <div className="font-semibold">成績通知 / 配信運用</div>
+        <div className="font-semibold">反応の振り返り</div>
         {!pushSummary ? (
-          <div className="text-sm opacity-70">配信状態を読み込み中…</div>
+          <div className="text-sm opacity-70">反応サマリーを読み込み中…</div>
         ) : !pushSummary.available ? (
           <div className="text-sm text-amber-700">
-            Push配信の queue/metrics テーブルが未適用です。migration 適用後に配信率/開封率を確認できます。
+            反応サマリーは準備中です。投稿と通知の利用が増えると、ここに傾向が表示されます。
           </div>
         ) : (
           <div className="grid gap-1 text-sm">
             <div>
-              配信率 {Math.round(pushSummary.deliveryRate * 100)}% / 開封率 {Math.round(pushSummary.openRate * 100)}%
+              通知の到達 {Math.round(pushSummary.deliveryRate * 100)}% / 開封 {Math.round(pushSummary.openRate * 100)}%
             </div>
             <div>
-              端末 {pushSummary.enabledDevices}/{pushSummary.totalDevices} 有効 / queue pending {pushSummary.queuePending}
+              通知を受け取れる端末 {pushSummary.enabledDevices}/{pushSummary.totalDevices}
             </div>
           </div>
         )}
         <div className="flex flex-wrap gap-3 text-sm">
-          <a href="/dashboard/push-delivery" className="underline">
-            Push配信ダッシュボード
-          </a>
-          <a href="/dashboard/timeline-learning" className="underline">
-            学習/おすすめ
-          </a>
-          <a href="/dashboard/ab-timeseries" className="underline">
-            A/B時系列
+          <a href="/persona-feed" className="underline">
+            キャラTL
           </a>
           <a href="/saved" className="underline">
             保存コレクション
+          </a>
+          <a href="/persona-evolution" className="underline">
+            キャラ進化
           </a>
         </div>
       </div>
@@ -412,7 +415,7 @@ export default function ProfileSettings() {
       <div className="border border-red-200 bg-red-50 rounded-lg p-4 space-y-2">
         <div className="font-semibold text-red-800">アカウント管理</div>
         <p className="text-sm text-red-700">
-          App Store審査対応として、アプリ内からアカウントを完全削除できます。
+          アカウントを削除すると、投稿・プロフィールなどのデータは復元できません。
         </p>
         <button
           onClick={deleteAccount}

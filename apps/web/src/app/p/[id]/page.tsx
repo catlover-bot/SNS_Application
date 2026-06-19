@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { supabaseClient as supabase } from "@/lib/supabase/client";
 import PostCard from "@/components/PostCard";
 import Replies from "@/components/Replies";
@@ -19,11 +20,15 @@ type PostRow = {
   reply_count?: number | null;
 };
 
+const POST_DETAIL_ERROR =
+  "投稿を読み込めませんでした。投稿が削除されたか、通信が一時的に不安定な可能性があります。";
+
 export default function PostDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const id = typeof params.id === "string" ? params.id : "";
-  const sb = useMemo(() => supabase(), []);
+  const configured = isSupabaseConfigured();
+  const sb = useMemo(() => (configured ? supabase() : null), [configured]);
 
   const [loading, setLoading] = useState(true);
   const [item, setItem] = useState<PostRow | null>(null);
@@ -35,6 +40,11 @@ export default function PostDetailPage() {
 
   const fetchPost = useCallback(async () => {
     if (!id) return;
+    if (!sb) {
+      setLoading(false);
+      setError("データサービスの設定が完了していないため、投稿を読み込めません。");
+      return;
+    }
     setLoading(true);
     setError(null);
     setPrevId(null);
@@ -63,8 +73,8 @@ export default function PostDetailPage() {
       }
 
       setItem((raw.data as PostRow | null) ?? null);
-    } catch (e: any) {
-      setError(e?.message ?? "投稿の取得に失敗しました");
+    } catch {
+      setError(POST_DETAIL_ERROR);
       setItem(null);
     } finally {
       setLoading(false);
@@ -173,22 +183,34 @@ export default function PostDetailPage() {
   );
 
   if (!id) {
-    return <div className="p-6 text-sm opacity-70">投稿IDが不正です。</div>;
+    return <div className="rounded-xl border bg-white p-6 text-sm text-slate-600">投稿を開けませんでした。</div>;
   }
 
   if (loading) {
-    return <div className="p-6 text-sm opacity-70">投稿を読み込み中…</div>;
+    return <div className="rounded-xl border bg-white p-6 text-sm text-slate-600">投稿を読み込み中…</div>;
   }
 
   if (error) {
-    return <div className="p-6 text-sm text-red-600">{error}</div>;
+    return (
+      <div className="rounded-xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-800">
+        <div className="font-medium">投稿を表示できませんでした</div>
+        <p className="mt-1">{error}</p>
+        <button
+          type="button"
+          onClick={() => void fetchPost()}
+          className="mt-3 rounded-full border border-rose-200 bg-white px-3 py-1.5 hover:bg-rose-100"
+        >
+          もう一度読み込む
+        </button>
+      </div>
+    );
   }
 
   if (!item) {
     return (
-      <div className="p-6 space-y-2">
-        <div className="text-sm opacity-70">この投稿は見つかりませんでした。</div>
-        <a href="/" className="underline text-sm">
+      <div className="rounded-xl border bg-white p-6 space-y-2">
+        <div className="text-sm text-slate-600">この投稿は見つかりませんでした。</div>
+        <a href="/" className="underline text-sm text-blue-700">
           タイムラインへ戻る
         </a>
       </div>
@@ -196,7 +218,7 @@ export default function PostDetailPage() {
   }
 
   return (
-    <div className="space-y-4 p-6" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+    <div className="mx-auto max-w-3xl space-y-4 p-6" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
       <a href="/" className="underline text-sm">
         ← タイムラインへ戻る
       </a>

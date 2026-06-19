@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { safeJsonError } from "@/lib/apiSecurity";
 import { supabaseServer } from "@/lib/supabase/server";
 
 type BuddyLearningMode = "adaptive" | "stable";
@@ -61,7 +62,7 @@ export async function GET() {
     return NextResponse.json(
       {
         ok: false,
-        error: e?.message ?? "persona_feed_preferences_read_error",
+        error: "persona_feed_preferences_unavailable",
         buddyLearningMode: DEFAULT_BUDDY_LEARNING_MODE,
         available: false,
       },
@@ -101,15 +102,10 @@ export async function POST(req: NextRequest) {
         error: "preferences_table_missing",
       });
     }
-    return NextResponse.json(
-      {
-        ok: false,
-        available: false,
-        buddyLearningMode: nextMode,
-        error: up.error.message ?? "persona_feed_preferences_write_error",
-      },
-      { status: 200 }
-    );
+    return safeJsonError("persona_feed_preferences_save_failed", 200, {
+      available: false,
+      buddyLearningMode: nextMode,
+    });
   }
 
   return NextResponse.json({

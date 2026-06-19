@@ -44,8 +44,7 @@ function detectProfileTone(summary: SummaryRow | null) {
     return {
       label: "AI キャラ分析はまだです",
       description:
-        "このユーザーの投稿はまだ十分に AI 判定されていません。",
-      emoji: "🕒",
+        "このユーザーの投稿はまだ十分に分析されていません。",
       colorClass: "bg-slate-50 text-slate-700 border-slate-300",
     };
   }
@@ -60,7 +59,6 @@ function detectProfileTone(summary: SummaryRow | null) {
     return {
       label: "ネタ職人タイプ",
       description: "冗談やネタっぽい投稿が多く、場を盛り上げるタイプです。",
-      emoji: "🎭",
       colorClass: "bg-purple-50 text-purple-700 border-purple-300",
     };
   }
@@ -71,7 +69,6 @@ function detectProfileTone(summary: SummaryRow | null) {
       label: "盛り上げストタイプ",
       description:
         "話を少し盛って面白くする傾向があり、ノリの良さが目立つタイプです。",
-      emoji: "📈",
       colorClass: "bg-orange-50 text-orange-700 border-orange-300",
     };
   }
@@ -82,7 +79,6 @@ function detectProfileTone(summary: SummaryRow | null) {
       label: "カリスマ自慢タイプ",
       description:
         "実績や成功体験をよく共有し、自己ブランディングが得意なタイプです。",
-      emoji: "👑",
       colorClass: "bg-amber-50 text-amber-700 border-amber-300",
     };
   }
@@ -93,7 +89,6 @@ function detectProfileTone(summary: SummaryRow | null) {
       label: "ガチ本音タイプ",
       description:
         "比較的事実ベースで、正直な気持ちや日常をそのまま共有するタイプです。",
-      emoji: "✅",
       colorClass: "bg-emerald-50 text-emerald-700 border-emerald-300",
     };
   }
@@ -102,7 +97,6 @@ function detectProfileTone(summary: SummaryRow | null) {
     label: "ミックスバランスタイプ",
     description:
       "事実・冗談・盛り上げ・自己アピールがバランス良く混ざった投稿傾向です。",
-    emoji: "💬",
     colorClass: "bg-sky-50 text-sky-700 border-sky-300",
   };
 }
@@ -156,7 +150,7 @@ export function ProfileCharacterRadar({ handle }: Props) {
           if (res.status === 404) {
             setError("プロフィールが見つかりませんでした。");
           } else {
-            setError(`AI キャラサマリの取得に失敗しました (HTTP ${res.status})`);
+            setError("キャラサマリを読み込めませんでした。時間をおいて再度お試しください。");
           }
           return;
         }
@@ -164,7 +158,7 @@ export function ProfileCharacterRadar({ handle }: Props) {
         const json = (await res.json()) as ApiResponse;
 
         if ("error" in json) {
-          setError("AI キャラサマリの取得に失敗しました。");
+          setError("キャラサマリを読み込めませんでした。時間をおいて再度お試しください。");
           return;
         }
 
@@ -172,10 +166,9 @@ export function ProfileCharacterRadar({ handle }: Props) {
           setProfile(json.profile);
           setSummary(json.summary);
         }
-      } catch (e) {
-        console.error("[ProfileCharacterRadar] fetch error", e);
+      } catch {
         if (!canceled) {
-          setError("AI キャラサマリの取得中にエラーが発生しました。");
+          setError("キャラサマリを読み込めませんでした。時間をおいて再度お試しください。");
         }
       } finally {
         if (!canceled) setLoading(false);
@@ -190,14 +183,14 @@ export function ProfileCharacterRadar({ handle }: Props) {
   if (loading) {
     return (
       <div className="mt-4 rounded-xl border bg-slate-50 px-4 py-3 text-xs text-slate-600">
-        AI キャラレーダーを計算中です…
+        キャラレーダーを計算中です…
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="mt-4 rounded-xl border bg-red-50 px-4 py-3 text-xs text-red-700">
+      <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800">
         {error}
       </div>
     );
@@ -212,17 +205,16 @@ export function ProfileCharacterRadar({ handle }: Props) {
   const joke = clampScore(summary?.joke_avg ?? null, 0);
 
   return (
-    <div className="mt-4 rounded-2xl border bg-white px-4 py-3 text-xs space-y-3">
+    <div className="mt-4 rounded-lg border bg-white px-4 py-3 text-xs space-y-3">
       <div className="flex items-center gap-2">
         <span
           className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-medium ${tone.colorClass}`}
         >
-          <span>{tone.emoji}</span>
-          <span>AI キャラ診断</span>
+          <span>キャラ診断</span>
         </span>
         {analyzed > 0 && (
           <span className="text-[11px] text-slate-500">
-            （AI 判定済み投稿: {analyzed}件）
+            （分析済み投稿: {analyzed}件）
           </span>
         )}
       </div>

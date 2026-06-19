@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { supabaseClient } from "@/lib/supabase/client";
 
 type LabelKey = "funny" | "insight" | "toxic" | "question" | "sarcasm";
@@ -17,8 +18,9 @@ const CATALOG: { key: LabelKey; emoji: string; text: string }[] = [
 type Props = { postId: string };
 
 export default function LabelBar({ postId }: Props) {
+  const configured = isSupabaseConfigured();
   // ✅ 各レンダーで再生成しないようにメモ化
-  const supabase = useMemo(() => supabaseClient(), []);
+  const supabase = useMemo(() => (configured ? supabaseClient() : null), [configured]);
   const [userId, setUserId] = useState<string | null>(null);
   const [my, setMy] = useState<Set<LabelKey>>(new Set());
   const [counts, setCounts] = useState<Record<LabelKey, number>>({
@@ -30,6 +32,7 @@ export default function LabelBar({ postId }: Props) {
   useEffect(() => {
     let alive = true;
     (async () => {
+      if (!supabase) return;
       // 自分
       const { data: { user } } = await supabase.auth.getUser();
       if (alive) setUserId(user?.id ?? null);
@@ -62,6 +65,7 @@ export default function LabelBar({ postId }: Props) {
   }, [postId, supabase]);
 
   const onToggle = async (key: LabelKey) => {
+    if (!supabase) return;
     if (!userId) { location.href = `/login?next=${encodeURIComponent(location.pathname)}`; return; }
     if (pending) return;
     setPending(key);

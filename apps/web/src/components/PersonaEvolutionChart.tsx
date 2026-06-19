@@ -98,12 +98,12 @@ export default function PersonaEvolutionChart({
         return;
       }
       if (!r.ok || !json) {
-        throw new Error((json as any)?.error ?? "キャラ進化の取得に失敗しました");
+        throw new Error("キャラ進化の取得に失敗しました");
       }
       setNeedLogin(false);
       setRes(json);
-    } catch (e: any) {
-      setError(e?.message ?? "キャラ進化の取得に失敗しました");
+    } catch {
+      setError("キャラ進化を読み込めませんでした。時間をおいてもう一度お試しください。");
       setRes(null);
     } finally {
       setLoading(false);
@@ -143,8 +143,8 @@ export default function PersonaEvolutionChart({
       <section className={className}>
         <div className="rounded-xl border bg-white p-4 space-y-2">
           <h2 className="text-sm font-semibold">キャラ進化トレース</h2>
-          <p className="text-sm opacity-70">ログイン後に利用できます。</p>
-          <Link href="/login?next=/dashboard/persona" className="text-sm underline">
+          <p className="text-sm opacity-70">ログインすると、投稿履歴からキャラの変化を確認できます。</p>
+          <Link href="/login?next=/persona-evolution" className="text-sm underline">
             ログインする
           </Link>
         </div>
@@ -173,12 +173,16 @@ export default function PersonaEvolutionChart({
         </div>
 
         {error ? (
-          <div className="text-sm text-red-600">{error}</div>
+          <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>
         ) : loading ? (
           <div className="text-sm opacity-70">読み込み中…</div>
         ) : points.length === 0 ? (
-          <div className="text-sm opacity-70">
-            まだ十分な投稿履歴がありません。投稿後に再評価すると表示されます。
+          <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+            <div className="font-medium text-slate-900">キャラ進化はこれから記録されます</div>
+            <p className="mt-1">投稿が増えると、日ごとの主キャラと変化の流れが表示されます。</p>
+            <Link href="/compose" className="mt-3 inline-flex rounded-full bg-blue-600 px-4 py-2 text-white">
+              投稿する
+            </Link>
           </div>
         ) : (
           <>
@@ -222,8 +226,7 @@ export default function PersonaEvolutionChart({
 
             <div className="space-y-2">
               <div className="text-xs text-gray-500">
-                遷移ポイント {transitions.length} 回
-                {res?.source ? <span className="ml-2">source: {res.source}</span> : null}
+                キャラが切り替わった日 {transitions.length} 回
               </div>
               <div className="flex flex-wrap gap-2">
                 {transitions.map((t) => (
@@ -240,9 +243,6 @@ export default function PersonaEvolutionChart({
                   </span>
                 ))}
               </div>
-              {res?.warning ? (
-                <div className="text-xs text-amber-700">fallback: {res.warning}</div>
-              ) : null}
             </div>
           </>
         )}

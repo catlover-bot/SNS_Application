@@ -6,6 +6,9 @@
     "dev": "cross-env NEXT_DISABLE_TURBOPACK=1 next dev",
     "prebuild": "pnpm -C ../../packages/core run build",
     "build": "next build",
+    "smoke": "node ../../scripts/web_smoke_check.mjs",
+    "check-env": "node ../../scripts/web_env_check.mjs",
+    "auth-qa-plan": "node ../../scripts/web_auth_qa_plan.mjs",
     "start": "next start",
     "clean": "node -e \"try{require('fs').rmSync('.next',{recursive:true,force:true})}catch{};try{require('fs').rmSync('.turbo',{recursive:true,force:true})}catch{}\""
   },

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PostCard from "@/components/PostCard";
+import SignedInDemoGuide from "@/components/SignedInDemoGuide";
 import { fetchPersonaFeedPage } from "@/lib/socialDataClient";
 import { usePersonaFeedState } from "@/lib/useSocialListState";
 
@@ -119,26 +120,6 @@ type RewriteLearningResponse = {
   by_style?: Record<string, RewriteLearningStyleStat>;
 };
 
-type AbDashboardResponse = {
-  ok?: boolean;
-  available?: boolean;
-  days?: number;
-  recommendedMode?: BuddyLearningMode | null;
-  canAutoSwitch?: boolean;
-  recommendationScoreDelta?: number;
-  modes?: Array<{
-    mode: BuddyLearningMode;
-    impressions: number;
-    opens: number;
-    feedLoads: number;
-    openRate: number;
-    revisitRate: number;
-    engageRate: number;
-    confidence: number;
-    score: number;
-  }>;
-};
-
 type FeedbackEvent = "impression" | "open" | "reply" | "like" | "boost" | "skip" | "hide";
 
 const PAGE = 20;
@@ -193,7 +174,7 @@ function normalizeBuddyLearningMode(v: string | null | undefined): BuddyLearning
 }
 
 function buddyLearningModeLabel(mode: BuddyLearningMode) {
-  return mode === "stable" ? "stable（安定）" : "adaptive（学習優先）";
+  return mode === "stable" ? "安定モード" : "発見モード";
 }
 
 function todayKeyLocal() {
@@ -287,38 +268,22 @@ function explainPersonaFeedReason(match: MatchMeta | undefined, basePersona: str
   } else if (reason === "fallback_no_scores" || reason === "global_fallback") {
     lines.push("キャラスコア不足のため、通常TLから補完表示されています。");
   } else if (reason) {
-    lines.push(`表示理由コード: ${reason}`);
+    lines.push("あなたの最近の反応に近い投稿として表示されています。");
   } else {
     lines.push("表示理由データがまだありません。");
   }
 
-  if (match?.weight != null) {
-    lines.push(`学習重み: x${Number(match.weight).toFixed(2)}`);
-  }
-  if (match?.buddy_weight != null && Number(match.buddy_weight) > 1.01) {
-    lines.push(`バディ優先ブースト: x${Number(match.buddy_weight).toFixed(2)}`);
-  }
-  if (match?.buddy_bonus_scale != null) {
-    lines.push(`学習係数上限: +${Math.round(Number(match.buddy_bonus_scale) * 100)}%`);
-  }
   if (match?.buddy_score != null && Number(match.buddy_score) > 0) {
     lines.push(`バディ一致度: ${(Number(match.buddy_score) * 100).toFixed(1)}%`);
   }
   if (match?.raw_score != null) {
-    lines.push(`原スコア: ${(Number(match.raw_score) * 100).toFixed(1)}%`);
+    lines.push(`基本相性: ${(Number(match.raw_score) * 100).toFixed(1)}%`);
   }
   if (match?.weighted_score != null) {
-    lines.push(`重み後スコア: ${(Number(match.weighted_score) * 100).toFixed(1)}%`);
+    lines.push(`あなた向け相性: ${(Number(match.weighted_score) * 100).toFixed(1)}%`);
   }
   if (match?.predicted_response != null) {
     lines.push(`予測反応率: ${(Number(match.predicted_response) * 100).toFixed(1)}%`);
-  }
-  if (match?.calibration_multiplier != null) {
-    lines.push(
-      `バズ補正: x${Number(match.calibration_multiplier).toFixed(2)} (n=${Number(
-        match.calibration_samples ?? 0
-      )})`
-    );
   }
 
   return lines;
@@ -375,8 +340,6 @@ export default function PersonaFeedPage() {
     null
   );
   const [savingBuddyLearningMode, setSavingBuddyLearningMode] = useState(false);
-  const [buddyModeDashboard, setBuddyModeDashboard] = useState<AbDashboardResponse | null>(null);
-  const [buddyModeDashboardLoading, setBuddyModeDashboardLoading] = useState(false);
   const [needLogin, setNeedLogin] = useState(false);
   const error = personaFeedState.error;
   const [openedIds, setOpenedIds] = useState<Record<string, true>>({});
@@ -418,6 +381,10 @@ export default function PersonaFeedPage() {
   const skipSentIds = useRef<Set<string>>(new Set());
   const hiddenIds = useRef<Set<string>>(new Set());
   const missionOpenedPostKeys = useRef<Set<string>>(new Set());
+  const feedRequestKeys = useRef<Set<string>>(new Set());
+  const feedRequestGeneration = useRef(0);
+  const feedbackContextRef = useRef({ basePersona, buddyLearningMode, strategy });
+  feedbackContextRef.current = { basePersona, buddyLearningMode, strategy };
 
   const applyBuddyLearningFeedback = useCallback(
     (
@@ -489,15 +456,16 @@ export default function PersonaFeedPage() {
         skipSentIds.current.add(p.id);
       }
       try {
+        const feedbackContext = feedbackContextRef.current;
         const res = await fetch("/api/me/persona-feed/feedback", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             postId: p.id,
             personaKey: p.persona_match?.key ?? null,
-            basePersona,
-            buddyLearningMode,
-            strategy,
+            basePersona: feedbackContext.basePersona,
+            buddyLearningMode: feedbackContext.buddyLearningMode,
+            strategy: feedbackContext.strategy,
             reason: p.persona_match?.reason ?? null,
             event,
             dwellMs:
@@ -521,7 +489,7 @@ export default function PersonaFeedPage() {
         // ignore
       }
     },
-    [applyBuddyLearningFeedback, basePersona, buddyLearningMode, strategy]
+    [applyBuddyLearningFeedback]
   );
 
   const hydrateOpenedState = useCallback(async (postIds: string[]) => {
@@ -717,23 +685,6 @@ export default function PersonaFeedPage() {
     []
   );
 
-  const loadBuddyModeDashboard = useCallback(async () => {
-    setBuddyModeDashboardLoading(true);
-    try {
-      const res = await fetch("/api/me/persona-feed/ab-dashboard?days=14", {
-        cache: "no-store",
-      });
-      if (!res.ok) return;
-      const json = (await res.json().catch(() => null)) as AbDashboardResponse | null;
-      if (!json) return;
-      setBuddyModeDashboard(json);
-    } catch {
-      // ignore
-    } finally {
-      setBuddyModeDashboardLoading(false);
-    }
-  }, []);
-
   const flushSkipEvents = useCallback(() => {
     const now = Date.now();
     itemsRef.current.forEach((p) => {
@@ -751,7 +702,12 @@ export default function PersonaFeedPage() {
 
   const fetchPage = useCallback(
     async (nextPage: number, replace = false) => {
-      if (loading) return;
+      const requestKey = `${strategy}:${nextPage}:${replace ? "replace" : "append"}`;
+      if (feedRequestKeys.current.has(requestKey)) return;
+      feedRequestKeys.current.add(requestKey);
+      const requestGeneration = replace
+        ? ++feedRequestGeneration.current
+        : feedRequestGeneration.current;
       personaFeedActions.start(replace);
 
       try {
@@ -761,13 +717,15 @@ export default function PersonaFeedPage() {
           strategy,
         })) as { res: Response; json: ApiResponse | null };
 
+        if (requestGeneration !== feedRequestGeneration.current) return;
+
         if (res.status === 401) {
           setNeedLogin(true);
           personaFeedActions.replace([], { hasMore: false, offset: 0 });
           return;
         }
         if (!res.ok || !json) {
-          throw new Error(json?.error ?? "キャラ別タイムライン取得に失敗しました");
+          throw new Error("キャラ別タイムライン取得に失敗しました");
         }
 
         if (replace) {
@@ -857,10 +815,13 @@ export default function PersonaFeedPage() {
           });
         }
       } catch (e: any) {
-        personaFeedActions.fail(e?.message ?? "キャラ別タイムライン取得に失敗しました");
+        if (requestGeneration !== feedRequestGeneration.current) return;
+        personaFeedActions.fail("キャラ別タイムラインを読み込めませんでした。時間をおいてもう一度お試しください。");
+      } finally {
+        feedRequestKeys.current.delete(requestKey);
       }
     },
-    [flushSkipEvents, hydrateOpenedState, loading, personaFeedActions, strategy]
+    [flushSkipEvents, hydrateOpenedState, personaFeedActions, strategy]
   );
 
   useEffect(() => {
@@ -1038,10 +999,6 @@ export default function PersonaFeedPage() {
   }, [basePersona, loadBuddyMissionProgress, missionCandidates]);
 
   useEffect(() => {
-    void loadBuddyModeDashboard();
-  }, [loadBuddyModeDashboard]);
-
-  useEffect(() => {
     void loadRewriteLearning({
       basePersona,
       buddyKey: buddyMission?.key ?? null,
@@ -1142,12 +1099,12 @@ export default function PersonaFeedPage() {
 
   if (needLogin) {
     return (
-      <div className="space-y-3 p-6">
-        <h1 className="text-xl font-semibold">キャラ別タイムライン</h1>
-        <p className="text-sm opacity-70">
-          この機能はログイン後に使えます。
+      <div className="mx-auto max-w-3xl space-y-3 rounded-xl border bg-white p-6">
+        <h1 className="text-2xl font-bold">キャラ別タイムライン</h1>
+        <p className="text-sm text-slate-600">
+          ログインすると、あなたの投稿から見えたキャラに合わせて投稿を並べ替えられます。
         </p>
-        <a href="/login?next=/persona-feed" className="underline">
+        <a href="/login?next=/persona-feed" className="inline-flex rounded-full bg-slate-950 px-4 py-2 text-sm text-white">
           ログインする
         </a>
       </div>
@@ -1157,8 +1114,15 @@ export default function PersonaFeedPage() {
   return (
     <div className="space-y-4 max-w-3xl mx-auto p-6">
       <header className="space-y-2">
-        <h1 className="text-2xl font-bold">キャラ別タイムライン</h1>
-        <p className="text-sm opacity-70">{hint}</p>
+        <div className="rounded-xl border bg-white p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+            Persona Feed
+          </div>
+          <h1 className="mt-1 text-2xl font-bold">キャラ別タイムライン</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            {hint} 投稿を開く、返信する、興味なしにするほど、相性の良いキャラや話題が見つかりやすくなります。
+          </p>
+        </div>
         <div className="flex flex-wrap gap-3 text-sm">
           <a href="/persona-evolution" className="underline">
             キャラ進化を見る
@@ -1168,6 +1132,8 @@ export default function PersonaFeedPage() {
           </a>
         </div>
       </header>
+
+      {!basePersona && items.length === 0 && !loading ? <SignedInDemoGuide /> : null}
 
       {trendingTopics.length > 0 && (
         <div className="rounded-xl border bg-white p-3 space-y-2">
@@ -1218,19 +1184,19 @@ export default function PersonaFeedPage() {
 
       <div className="rounded-xl border bg-white p-3 space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-sm font-semibold">バディ学習の強さ</div>
+          <div className="text-sm font-semibold">おすすめの動き方</div>
           <div className="text-xs opacity-70">
-            {buddyLearningModeAvailable ? "DB保存" : "ローカル/既定値"}
+            {buddyLearningModeAvailable ? "設定を保存中" : "この端末の設定"}
           </div>
         </div>
         <div className="text-[11px] opacity-70">
           {buddyLearningModeSource === "preference"
             ? "あなたが選択した設定を使用中"
             : buddyLearningModeSource === "ab_optimized"
-            ? "A/B実績（開封率/再訪率）に基づく自動最適化を使用中"
+            ? "最近の反応に基づいておすすめを自動調整中"
             : buddyLearningModeSource === "ab_assignment" && buddyLearningModeAb?.variant_key
-            ? `A/B最適化中: variant ${buddyLearningModeAb.variant_key}（既定 ${buddyLearningModeAb.assigned_mode}）`
-            : "既定の学習モードを使用中"}
+            ? "おすすめの出し方を試しながら調整中"
+            : "標準のおすすめ設定を使用中"}
         </div>
         <div className="flex flex-wrap gap-2">
           <button
@@ -1243,7 +1209,7 @@ export default function PersonaFeedPage() {
                 : "bg-white"
             }`}
           >
-            adaptive（学習優先）
+            発見を広げる
           </button>
           <button
             type="button"
@@ -1253,7 +1219,7 @@ export default function PersonaFeedPage() {
               buddyLearningMode === "stable" ? "bg-slate-700 text-white border-slate-700" : "bg-white"
             }`}
           >
-            stable（安定）
+            安定させる
           </button>
         </div>
         <p className="text-xs opacity-70">
@@ -1261,63 +1227,11 @@ export default function PersonaFeedPage() {
             ? "新しい反応から表示順を素早く調整します。探索が増え、変化を感じやすいモードです。"
             : "表示順の急変を抑えて、慣れた体験を維持します。学習は継続しますが反映は穏やかです。"}
         </p>
-        <div className="rounded-lg border bg-slate-50 p-2 space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-xs font-medium">A/B集計（開封率・再訪率）</div>
-            <div className="flex items-center gap-2">
-              <a href="/dashboard/ab-timeseries" className="text-xs underline">
-                時系列を見る
-              </a>
-              <button
-                type="button"
-                className="text-xs underline"
-                onClick={() => void loadBuddyModeDashboard()}
-                disabled={buddyModeDashboardLoading}
-              >
-                {buddyModeDashboardLoading ? "更新中…" : "更新"}
-              </button>
-            </div>
+        <div className="rounded-lg border bg-slate-50 p-2 space-y-1">
+          <div className="text-xs font-medium">おすすめの反応傾向</div>
+          <div className="text-[11px] opacity-70">
+            投稿を開いたり返信したりすると、キャラTLの並び順が少しずつあなた向けに調整されます。
           </div>
-          {!buddyModeDashboard?.available ? (
-            <div className="text-[11px] opacity-70">
-              A/Bイベントが蓄積中です。一定サンプルで既定modeの自動最適化に使われます。
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <div className="text-[11px] opacity-70">
-                直近 {Math.max(1, Math.floor(Number(buddyModeDashboard.days ?? 14) || 14))}日 / 推奨:
-                {" "}
-                {buddyModeDashboard.recommendedMode ?? "未確定"}
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {(buddyModeDashboard.modes ?? []).map((m) => (
-                  <div key={`ab-mode-${m.mode}`} className="rounded border bg-white p-2 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <div className="text-xs font-semibold">{m.mode}</div>
-                      <div className="text-[10px] opacity-70">
-                        score {Number(m.score ?? 0).toFixed(3)}
-                      </div>
-                    </div>
-                    <div className="text-[11px] opacity-80">
-                      開封率 {Math.round(clamp01(Number(m.openRate ?? 0)) * 100)}% / 再訪率{" "}
-                      {Math.round(clamp01(Number(m.revisitRate ?? 0)) * 100)}%
-                    </div>
-                    <div className="text-[10px] opacity-70">
-                      impression {Math.max(0, Math.floor(Number(m.impressions ?? 0) || 0))} / feed_load{" "}
-                      {Math.max(0, Math.floor(Number(m.feedLoads ?? 0) || 0))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {buddyModeDashboard.recommendedMode &&
-                buddyLearningModeSource !== "preference" &&
-                buddyLearningMode !== buddyModeDashboard.recommendedMode && (
-                  <div className="text-[11px] text-emerald-700">
-                    既定modeの自動最適化候補: {buddyModeDashboard.recommendedMode}
-                  </div>
-                )}
-            </div>
-          )}
         </div>
       </div>
 
@@ -1339,7 +1253,7 @@ export default function PersonaFeedPage() {
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="text-xs font-semibold text-emerald-900">
-              バディ優先が有効です（{buddyLearningModeLabel(buddyLearningMode)} / 最近の投稿傾向から自動学習）
+              相性バディを優先中（{buddyLearningModeLabel(buddyLearningMode)} / 最近の反応から調整）
             </div>
             {missionCandidates.length > 1 && (
               <button
@@ -1360,9 +1274,9 @@ export default function PersonaFeedPage() {
                 key={`buddy-${x.key}`}
                 className="text-xs px-2 py-1 rounded-full border border-emerald-300 bg-white"
               >
-                @{x.key} {(Math.max(0, Math.min(1, x.score)) * 100).toFixed(0)}% / 係数+
+                @{x.key} 相性{(Math.max(0, Math.min(1, x.score)) * 100).toFixed(0)}% / 優先+
                 {Math.round(Math.max(0.12, Math.min(0.95, Number(x.bonus_scale ?? 0.42))) * 100)}
-                % / 信頼
+                % / 学習
                 {Math.round(
                   Math.max(0, Math.min(1, Number(x.learning_confidence ?? 0))) * 100
                 )}%
@@ -1394,7 +1308,7 @@ export default function PersonaFeedPage() {
                   {Array.isArray(x.history_points) && x.history_points.length > 1 && (
                     <div className="space-y-1">
                       <div className="text-[10px] text-emerald-900/70">
-                        係数推移（最近）: 「自分向けTL」が育っているか確認できます
+                        おすすめの変化（最近）: 「自分向けTL」が育っているか確認できます
                       </div>
                       <div className="h-8 flex items-end gap-[2px] rounded border border-emerald-100 bg-emerald-50 px-1 py-1">
                         {x.history_points.slice(-12).map((pt, idx, arr) => {
@@ -1433,7 +1347,7 @@ export default function PersonaFeedPage() {
                   連続達成 {buddyMission.streakDays}日
                 </span>
                 <span>・</span>
-                <span>{buddyMissionProgressAvailable ? "進捗はDB保存" : "進捗はローカル保持"}</span>
+                <span>{buddyMissionProgressAvailable ? "進捗を保存中" : "この端末で進捗を保持"}</span>
                 {buddyMissionXpAvailable && (
                   <>
                     <span>・</span>
@@ -1504,7 +1418,7 @@ export default function PersonaFeedPage() {
                       {rewriteLearningLoading
                         ? "実反応学習を更新中…"
                         : rewriteLearningAvailable
-                        ? `実反応学習 ${rewriteLearningSource}${rewriteLearningContextLabel ? ` / ${rewriteLearningContextLabel}` : ""}`
+                        ? "反応に合わせて提案を調整中"
                         : "学習データ準備中"}
                     </span>
                   </div>
@@ -1522,13 +1436,13 @@ export default function PersonaFeedPage() {
                             <div className="text-xs font-semibold">{v.style}</div>
                             <div className="flex flex-wrap gap-1 text-[10px]">
                               <span className="rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5">
-                                補正 x{Number(v.learning?.multiplier ?? 1).toFixed(2)}
+                                反応補正 {Math.round(clamp01(Number(v.learning?.confidence ?? 0)) * 100)}%
                               </span>
                               <span className="rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5">
-                                信頼 {Math.round(clamp01(Number(v.learning?.confidence ?? 0)) * 100)}%
+                                おすすめ度 {Math.round(clamp01(Number(v.learning?.learnedScore ?? 0)) * 100)}%
                               </span>
                               <span className="rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5">
-                                n={Math.max(0, Math.floor(Number(v.learning?.samples ?? 0) || 0))}
+                                反応 {Math.max(0, Math.floor(Number(v.learning?.samples ?? 0) || 0))}
                               </span>
                             </div>
                           </div>
@@ -1578,13 +1492,29 @@ export default function PersonaFeedPage() {
       )}
 
       {error && (
-        <div className="rounded border bg-red-50 text-red-700 text-sm p-3">{error}</div>
+        <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>
       )}
 
       {items.length === 0 && loading ? (
-        <div className="text-sm opacity-70">読み込み中…</div>
+        <div className="rounded-lg border bg-white p-4 text-sm text-slate-500">読み込み中…</div>
       ) : items.length === 0 ? (
-        <div className="text-sm opacity-70">表示できる投稿がまだありません。</div>
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">
+          <div className="font-semibold text-slate-900">キャラ別タイムラインはこれから育ちます</div>
+          <p className="mt-1">
+            投稿を作成してキャラ候補を増やすか、通常タイムラインで気になる投稿を開くと、おすすめの材料が増えます。
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <a href="/compose" className="rounded-full bg-blue-600 px-4 py-2 text-white hover:bg-blue-700">
+              投稿する
+            </a>
+            <a href="/dashboard/persona" className="rounded-full border border-slate-200 bg-white px-4 py-2 hover:bg-slate-50">
+              キャラ分析を見る
+            </a>
+            <a href="/" className="rounded-full border border-slate-200 bg-white px-4 py-2 hover:bg-slate-50">
+              ホームへ
+            </a>
+          </div>
+        </div>
       ) : (
         <div className="space-y-4">
           {freshItems.length > 0 && (
@@ -1615,9 +1545,9 @@ export default function PersonaFeedPage() {
                     {m?.key && (
                       <div className="flex flex-wrap items-center gap-2 text-xs">
                         <span className="px-2 py-0.5 rounded-full border bg-amber-50 border-amber-300">
-                          match @{m.key}
+                          相性 @{m.key}
                         </span>
-                        {pct != null && <span className="opacity-70">score {pct}%</span>}
+                        {pct != null && <span className="opacity-70">一致度 {pct}%</span>}
                         {predPct != null && (
                           <span className="px-2 py-0.5 rounded-full border bg-emerald-50 border-emerald-300">
                             予測反応 {predPct}%
@@ -1709,9 +1639,9 @@ export default function PersonaFeedPage() {
                     {m?.key && (
                       <div className="flex flex-wrap items-center gap-2 text-xs">
                         <span className="px-2 py-0.5 rounded-full border bg-amber-50 border-amber-300">
-                          match @{m.key}
+                          相性 @{m.key}
                         </span>
-                        {pct != null && <span className="opacity-70">score {pct}%</span>}
+                        {pct != null && <span className="opacity-70">一致度 {pct}%</span>}
                         {predPct != null && (
                           <span className="px-2 py-0.5 rounded-full border bg-emerald-50 border-emerald-300">
                             予測反応 {predPct}%

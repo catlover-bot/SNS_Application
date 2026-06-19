@@ -2,6 +2,7 @@
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { getSupabaseRuntimeConfig } from "./config";
 
 /**
  * Next.js のバージョン差で cookies() が sync/async の両パターンがある。
@@ -12,10 +13,10 @@ export async function supabaseServer(): Promise<SupabaseClient> {
   const maybe = cookies() as any;
   const bag = typeof maybe?.then === "function" ? await maybe : maybe;
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  const config = getSupabaseRuntimeConfig();
+  if (!config) throw new Error("SUPABASE_NOT_CONFIGURED");
 
-  return createServerClient(url, anon, {
+  return createServerClient(config.url, config.anonKey, {
     cookies: {
       get(name: string) {
         return bag.get(name)?.value ?? null;

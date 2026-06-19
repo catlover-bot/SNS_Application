@@ -1,8 +1,9 @@
-﻿// apps/web/src/app/login/LoginClient.tsx
+// apps/web/src/app/login/LoginClient.tsx
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { isSupabaseConfigured, SUPABASE_UNAVAILABLE_MESSAGE } from "@/lib/supabase/config";
 import { supabaseClient as supabase } from "@/lib/supabase/client";
 
 function passwordChecks(password: string) {
@@ -25,12 +26,37 @@ function passwordStrength(password: string) {
   return { score, label: "強い" };
 }
 
+function friendlyAuthMessage(mode: "signin" | "signup") {
+  return mode === "signin"
+    ? "ログインできませんでした。メールアドレスとパスワードを確認してください。"
+    : "登録できませんでした。入力内容を確認して、時間をおいてもう一度お試しください。";
+}
+
+function safeNextPath(raw: string | null) {
+  const next = String(raw ?? "").trim();
+  if (!next || !next.startsWith("/") || next.startsWith("//")) return "/";
+  return next;
+}
+
+function signInPromptFor(next: string) {
+  if (next.startsWith("/compose")) return "Create an account to post and evolve your persona.";
+  if (next.startsWith("/home") || next.startsWith("/persona-feed")) {
+    return "Sign in to use your personalized timeline.";
+  }
+  if (next.startsWith("/messages")) return "ログインするとDMを確認できます。";
+  if (next.startsWith("/notifications")) return "ログインすると通知を確認できます。";
+  if (next.startsWith("/saved")) return "ログインすると保存した投稿を確認できます。";
+  if (next !== "/") return "ログインするとこのページを利用できます。";
+  return null;
+}
+
 export default function LoginClient() {
   const router = useRouter();
-  const next = useSearchParams().get("next") ?? "/";
-
-  // ✅ Supabase クライアントを1度だけ生成
-  const sb = useMemo(() => supabase(), []);
+  const searchParams = useSearchParams();
+  const next = safeNextPath(searchParams.get("next"));
+  const reason = searchParams.get("reason");
+  const configured = isSupabaseConfigured();
+  const sb = useMemo(() => (configured ? supabase() : null), [configured]);
 
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
@@ -46,6 +72,7 @@ export default function LoginClient() {
   const now = useMemo(() => Date.now(), [cooldownTick]);
   const cooldownSeconds = cooldownUntil && cooldownUntil > now ? Math.ceil((cooldownUntil - now) / 1000) : 0;
   const strength = passwordStrength(password);
+  const routePrompt = signInPromptFor(next);
 
   useEffect(() => {
     if (!cooldownUntil) return;
@@ -74,6 +101,10 @@ export default function LoginClient() {
     const e = email.trim();
 
     try {
+      if (!sb) {
+        setMsg("ログインを利用できません。時間をおいて再度お試しください。");
+        return;
+      }
       if (!e || !password) {
         setMsg("メールアドレスとパスワードを入力してください。");
         return;
@@ -92,7 +123,6 @@ export default function LoginClient() {
           setMsg("確認用パスワードが一致しません。");
           return;
         }
-        // 新規登録
         const { data, error } = await sb.auth.signUp({ email: e, password });
         if (error) throw error;
         setFailedCount(0);
@@ -104,20 +134,19 @@ export default function LoginClient() {
           setMsg("確認メールを送信しました。受信トレイをご確認のうえ、確認後にログインしてください。");
         }
       } else {
-        // サインイン
         const { error } = await sb.auth.signInWithPassword({ email: e, password });
         if (error) throw error;
         setFailedCount(0);
         setCooldownUntil(null);
         router.push(next);
       }
-    } catch (err: any) {
+    } catch {
       const nextFailed = failedCount + 1;
       setFailedCount(nextFailed);
       if (nextFailed >= 5) {
         setCooldownUntil(Date.now() + 30_000);
       }
-      setMsg(err?.message ?? "処理に失敗しました。時間をおいて再度お試しください。");
+      setMsg(friendlyAuthMessage(mode));
     } finally {
       setLoading(false);
     }
@@ -129,27 +158,65 @@ export default function LoginClient() {
       setMsg("パスワードリセット用にメールアドレスを入力してください。");
       return;
     }
+    if (!sb) {
+      setMsg("パスワードリセットを利用できません。時間をおいて再度お試しください。");
+      return;
+    }
     const { error } = await sb.auth.resetPasswordForEmail(e, {
       redirectTo: `${location.origin}/auth/reset`,
     });
-    if (error) setMsg(error.message);
+    if (error) setMsg("パスワードリセット用メールを送信できませんでした。メールアドレスを確認してください。");
     else setMsg("パスワードリセット用のメールを送信しました。受信トレイをご確認ください。");
   };
 
+  if (!configured) {
+    return (
+      <div className="mx-auto max-w-md space-y-4 rounded-xl border bg-white p-6">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">PersonaLens</div>
+          <h1 className="mt-1 text-2xl font-bold">ログインを利用できません</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            {SUPABASE_UNAVAILABLE_MESSAGE} ローカルで利用する場合は Web 用の環境変数を設定してください。
+          </p>
+        </div>
+        <a
+          href="/"
+          className="inline-flex rounded-full border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50"
+        >
+          ホームへ戻る
+        </a>
+      </div>
+    );
+  }
+
   return (
-    <div className="max-w-md mx-auto p-6 space-y-4">
-      <h1 className="text-2xl font-bold">{mode === "signin" ? "ログイン" : "新規登録"}</h1>
+    <div className="mx-auto max-w-md space-y-4 rounded-xl border bg-white p-6">
+      <div>
+        <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">PersonaLens</div>
+        <h1 className="mt-1 text-2xl font-bold">{mode === "signin" ? "ログイン" : "新規登録"}</h1>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          投稿を分析してキャラを育て、相性の良いタイムラインと会話のきっかけを見つけるSNSです。
+        </p>
+      </div>
+
+      {(routePrompt || reason === "not_configured") && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+          {reason === "not_configured"
+            ? "データサービスの設定が完了していないため、この機能はまだ利用できません。"
+            : routePrompt}
+        </div>
+      )}
 
       <div className="flex gap-2 text-sm">
         <button
-          className={`border rounded px-3 py-1 ${mode === "signin" ? "bg-gray-100" : ""}`}
+          className={`rounded-full border px-3 py-1 ${mode === "signin" ? "bg-slate-950 text-white border-slate-950" : "bg-white"}`}
           onClick={() => setMode("signin")}
           type="button"
         >
           ログイン
         </button>
         <button
-          className={`border rounded px-3 py-1 ${mode === "signup" ? "bg-gray-100" : ""}`}
+          className={`rounded-full border px-3 py-1 ${mode === "signup" ? "bg-slate-950 text-white border-slate-950" : "bg-white"}`}
           onClick={() => setMode("signup")}
           type="button"
         >
@@ -158,7 +225,7 @@ export default function LoginClient() {
       </div>
 
       <input
-        className="border rounded p-2 w-full"
+        className="w-full rounded-lg border border-slate-200 p-2 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
         placeholder="you@example.com"
         type="email"
         value={email}
@@ -166,7 +233,7 @@ export default function LoginClient() {
         autoComplete="email"
       />
       <input
-        className="border rounded p-2 w-full"
+        className="w-full rounded-lg border border-slate-200 p-2 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
         placeholder="パスワード"
         type={showPassword ? "text" : "password"}
         value={password}
@@ -176,7 +243,7 @@ export default function LoginClient() {
       {mode === "signup" && (
         <>
           <input
-            className="border rounded p-2 w-full"
+            className="w-full rounded-lg border border-slate-200 p-2 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
             placeholder="パスワード（確認）"
             type={showPassword ? "text" : "password"}
             value={confirmPassword}
@@ -213,7 +280,7 @@ export default function LoginClient() {
       </label>
 
       <button
-        className="border rounded px-4 py-2 w-full"
+        className="w-full rounded-full bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
         onClick={onSubmit}
         disabled={loading || cooldownSeconds > 0}
         type="button"

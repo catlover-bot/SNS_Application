@@ -1,4 +1,5 @@
 ﻿import { NextResponse } from "next/server";
+import { safeJsonError } from "@/lib/apiSecurity";
 import { supabaseServer } from "@/lib/supabase/server";
 
 function clampInt(v: string | null, min: number, max: number, def: number) {
@@ -46,7 +47,7 @@ export async function GET(req: Request) {
     .from("feed_latest")
     .select("*")
     .range(offset, offset + fetchLimit - 1);
-  if (r.error) return NextResponse.json({ error: r.error.message }, { status: 400 });
+  if (r.error) return safeJsonError("feed_unavailable", 500);
 
   const items =
     blockedIds.size === 0
