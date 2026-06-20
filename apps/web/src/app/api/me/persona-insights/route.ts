@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { findDefaultPersona } from "@/lib/personaCatalog";
 import { supabaseServer } from "@/lib/supabase/server";
 
 type PostRow = {
@@ -61,7 +62,9 @@ async function resolveTitles(supa: any, keys: string[]) {
     });
   }
 
-  return Object.fromEntries(uniq.map((k) => [k, map.get(k) ?? k]));
+  return Object.fromEntries(
+    uniq.map((k) => [k, map.get(k) ?? findDefaultPersona(k)?.title ?? k])
+  );
 }
 
 export async function GET() {

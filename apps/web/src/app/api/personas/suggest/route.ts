@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { DEFAULT_PERSONA_CATALOG } from "@/lib/personaCatalog";
 import { supabaseServer } from "@/lib/supabase/server";
 
 type PersonaDefRow = {
@@ -101,7 +102,7 @@ export async function POST(req: NextRequest) {
     .select("key,title,theme,blurb,talk_style,relation_style,vibe_tags")
     .limit(500);
 
-  const rows = (defsRes.data ?? []) as PersonaDefRow[];
+  const rows = (defsRes.data?.length ? defsRes.data : DEFAULT_PERSONA_CATALOG) as PersonaDefRow[];
   if (!rows.length) {
     return NextResponse.json({ items: [] });
   }

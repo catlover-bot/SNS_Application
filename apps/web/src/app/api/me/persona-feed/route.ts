@@ -5,6 +5,7 @@ import {
   loadPersonaBuzzCalibrationSnapshot,
 } from "@/lib/personaBuzzCalibration";
 import { derivePersonaRowsFromSignals, topPersonaKey } from "@/lib/personaAssignment";
+import { defaultPersonaCompat } from "@/lib/personaCatalog";
 
 type Strategy = "same" | "compat";
 
@@ -841,7 +842,14 @@ export async function GET(req: NextRequest) {
         .order("weight", { ascending: false })
         .limit(8);
 
-      (compat.data ?? []).forEach((r: PersonaCompatNormRow) => {
+      const compatRows = compat.data?.length
+        ? compat.data
+        : defaultPersonaCompat(basePersona, "friendship", 8).map((row) => ({
+            b: row.target_key,
+            weight: row.score,
+          }));
+
+      compatRows.forEach((r: PersonaCompatNormRow) => {
         if (!r?.b || r.b === basePersona) return;
         weightMap.set(r.b, normalizeWeight(r.weight, 0.7));
       });

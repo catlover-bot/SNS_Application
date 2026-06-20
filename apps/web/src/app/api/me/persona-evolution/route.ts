@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { findDefaultPersona } from "@/lib/personaCatalog";
 import { supabaseServer } from "@/lib/supabase/server";
 
 type PostRow = {
@@ -51,6 +52,12 @@ async function buildTitlesMap(supa: any, keys: string[]) {
       map.set(r.key, r.title ?? r.key);
     });
   }
+
+  keys.forEach((key) => {
+    if (map.has(key)) return;
+    const fallback = findDefaultPersona(key);
+    if (fallback) map.set(key, fallback.title);
+  });
 
   return map;
 }

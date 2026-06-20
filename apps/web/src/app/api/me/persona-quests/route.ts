@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server";
+import {
+  defaultPersonaCompat,
+  findDefaultPersona,
+} from "@/lib/personaCatalog";
 import { supabaseServer } from "@/lib/supabase/server";
 
 type UserPersonaRow = {
@@ -65,8 +69,10 @@ export async function GET() {
     .order("weight", { ascending: true })
     .limit(1)
     .maybeSingle();
-  const buddyKey = compatHighRes.data?.b ?? up[1]?.persona_key ?? null;
-  const contrastKey = compatLowRes.data?.b ?? up[2]?.persona_key ?? null;
+  const staticCompat = defaultPersonaCompat(mainKey, "friendship", 12);
+  const buddyKey = compatHighRes.data?.b ?? staticCompat[0]?.target_key ?? up[1]?.persona_key ?? null;
+  const contrastKey =
+    compatLowRes.data?.b ?? staticCompat[staticCompat.length - 1]?.target_key ?? up[2]?.persona_key ?? null;
 
   const personaKeys = [mainKey, buddyKey, contrastKey].filter(Boolean) as string[];
   const defsRes = await supa
@@ -74,6 +80,11 @@ export async function GET() {
     .select("key,title,talk_style,vibe_tags")
     .in("key", personaKeys);
   const defs = (defsRes.data ?? []) as PersonaDefRow[];
+  personaKeys.forEach((key) => {
+    if (defs.some((row) => row.key === key)) return;
+    const fallback = findDefaultPersona(key);
+    if (fallback) defs.push(fallback);
+  });
   const defBy = new Map(defs.map((d) => [d.key, d]));
 
   const promptRes = await supa

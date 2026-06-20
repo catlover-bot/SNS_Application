@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { safeJsonError } from "@/lib/apiSecurity";
 import { supabaseServer } from "@/lib/supabase/server";
 import { derivePersonaRowsFromSignals } from "@/lib/personaAssignment";
+import { findDefaultPersona } from "@/lib/personaCatalog";
 
 export async function GET() {
   const supa = await supabaseServer();
@@ -91,6 +92,13 @@ export async function GET() {
     } else if (defRows) {
       defs = defRows as any;
     }
+
+    const known = new Set(defs.map((row) => row.key));
+    keys.forEach((key: string) => {
+      if (known.has(key)) return;
+      const fallback = findDefaultPersona(key);
+      if (fallback) defs.push({ key: fallback.key, title: fallback.title, theme: fallback.theme });
+    });
   }
 
   return NextResponse.json({ personas: finalPersonas, defs, source });

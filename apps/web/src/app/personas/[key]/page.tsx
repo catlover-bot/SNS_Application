@@ -145,6 +145,19 @@ function resolveIcon(
   };
 }
 
+function PersonaIconImage(props: {
+  src: string;
+  alt: string;
+  width: number;
+  height: number;
+  className: string;
+}) {
+  if (props.src.startsWith("/api/personas/image/")) {
+    return <img {...props} />;
+  }
+  return <Image {...props} />;
+}
+
 export default function PersonaDetailPage() {
   const params = useParams<{ key: string }>();
   const personaKey =
@@ -343,7 +356,7 @@ export default function PersonaDetailPage() {
       <section className="flex items-center gap-4 rounded-2xl border bg-white/80 px-4 py-4 sm:px-6 sm:py-5">
         <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border bg-slate-100">
           {iconInfo.isImage ? (
-            <Image
+            <PersonaIconImage
               src={iconInfo.value}
               alt={persona?.title || personaKey || "キャラアイコン"}
               width={64}
@@ -544,7 +557,7 @@ export default function PersonaDetailPage() {
                 <div className="flex flex-col gap-3 rounded-2xl border bg-gradient-to-br from-rose-50 via-amber-50 to-sky-50 px-4 py-4 sm:flex-row sm:gap-4 sm:px-6 sm:py-5">
                   <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-rose-100 bg-white/80">
                     {icon.isImage ? (
-                      <Image
+                      <PersonaIconImage
                         src={icon.value}
                         alt={`${displayTitle} のアイコン`}
                         width={48}
@@ -625,7 +638,7 @@ export default function PersonaDetailPage() {
                         <div className="flex min-w-0 items-start gap-2">
                           <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-100 bg-slate-50">
                             {icon.isImage ? (
-                              <Image
+                              <PersonaIconImage
                                 src={icon.value}
                                 alt={`${displayTitle} のアイコン`}
                                 width={32}

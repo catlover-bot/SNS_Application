@@ -1,6 +1,13 @@
 ﻿// apps/web/src/app/api/trending/route.ts
 import { NextResponse } from "next/server";
+import { safeJsonError } from "@/lib/apiSecurity";
 import { supabaseServer } from "@/lib/supabase/server";
+
+function clampInt(value: string | null, min: number, max: number, fallback: number) {
+  const parsed = Number(value ?? "");
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(parsed)));
+}
 
 /**
  * GET /api/trending?limit=20&offset=0
@@ -9,8 +16,8 @@ import { supabaseServer } from "@/lib/supabase/server";
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const limit = Math.max(1, Math.min(50, Number(url.searchParams.get("limit") ?? 20)));
-  const offset = Math.max(0, Number(url.searchParams.get("offset") ?? 0));
+  const limit = clampInt(url.searchParams.get("limit"), 1, 50, 20);
+  const offset = clampInt(url.searchParams.get("offset"), 0, 500, 0);
 
   const supa = await supabaseServer();
   const { data: { user } } = await supa.auth.getUser();
@@ -36,6 +43,11 @@ export async function GET(req: Request) {
         .order("weight", { ascending: false })
         .limit(5);
 
+      if (compat.error) {
+        console.error("[api/trending] persona compatibility error", compat.error);
+        return safeJsonError("trending_unavailable", 500, { items: [], used_personas: [] });
+      }
+
       personaKeys = [base, ...((compat.data ?? []).map(r => r.b))];
     }
   }
@@ -49,6 +61,11 @@ export async function GET(req: Request) {
       .in("persona_key", personaKeys)
       .order("final_score", { ascending: false })
       .limit(400); // 後で重複除去するので少し厚めに取る
+
+    if (ps.error) {
+      console.error("[api/trending] personalized scores error", ps.error);
+      return safeJsonError("trending_unavailable", 500, { items: [], used_personas: [] });
+    }
 
     const rows = (ps.data ?? []);
 
@@ -68,7 +85,7 @@ export async function GET(req: Request) {
       .slice(offset, offset + limit);
 
     const ids = ranked.map(r => r.post_id);
-    if (ids.length === 0) return NextResponse.json({ items: [] });
+    if (ids.length === 0) return NextResponse.json({ items: [], used_personas: personaKeys });
 
     // 4) posts をまとめて取って並び直す
     const posts = await supa
@@ -76,10 +93,18 @@ export async function GET(req: Request) {
       .select("*")
       .in("id", ids);
 
+    if (posts.error) {
+      console.error("[api/trending] personalized posts error", posts.error);
+      return safeJsonError("trending_unavailable", 500, { items: [], used_personas: [] });
+    }
+
     const byId = new Map((posts.data ?? []).map(p => [p.id, p]));
     const items = ranked
-      .map(r => ({ ...byId.get(r.post_id), score: r.score, matched_persona: r.persona_key }))
-      .filter(Boolean);
+      .map(r => {
+        const post = byId.get(r.post_id);
+        return post ? { ...post, score: r.score, matched_persona: r.persona_key } : null;
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
     return NextResponse.json({ items, used_personas: personaKeys });
   } else {
@@ -90,6 +115,11 @@ export async function GET(req: Request) {
       .select("post_id, final_score")
       .order("final_score", { ascending: false })
       .limit(600);
+
+    if (ps.error) {
+      console.error("[api/trending] global scores error", ps.error);
+      return safeJsonError("trending_unavailable", 500, { items: [], used_personas: [] });
+    }
 
     const rows = (ps.data ?? []);
     const maxByPost = new Map<string, number>();
@@ -103,17 +133,25 @@ export async function GET(req: Request) {
       .slice(offset, offset + limit);
 
     const ids = ranked.map(r => r.post_id);
-    if (ids.length === 0) return NextResponse.json({ items: [] });
+    if (ids.length === 0) return NextResponse.json({ items: [], used_personas: [] });
 
     const posts = await supa
       .from("posts")
       .select("*")
       .in("id", ids);
 
+    if (posts.error) {
+      console.error("[api/trending] global posts error", posts.error);
+      return safeJsonError("trending_unavailable", 500, { items: [], used_personas: [] });
+    }
+
     const byId = new Map((posts.data ?? []).map(p => [p.id, p]));
     const items = ranked
-      .map(r => ({ ...byId.get(r.post_id), score: r.score }))
-      .filter(Boolean);
+      .map(r => {
+        const post = byId.get(r.post_id);
+        return post ? { ...post, score: r.score } : null;
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
     return NextResponse.json({ items, used_personas: [] });
   }

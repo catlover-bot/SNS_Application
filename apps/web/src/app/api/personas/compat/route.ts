@@ -3,6 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { safeJsonError } from "@/lib/apiSecurity";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { supabaseServer } from "@/lib/supabase/server";
+import {
+  DEFAULT_PERSONA_CATALOG,
+  defaultPersonaCompat,
+} from "@/lib/personaCatalog";
 import { buildPersonaProfile } from "@sns/core";
 
 interface CompatRowRaw {
@@ -258,7 +262,11 @@ export async function GET(req: NextRequest) {
       return safeJsonError("persona_compat_unavailable", 500);
     }
 
-    const compatRows = (compatRowsRaw ?? []) as CompatRowRaw[];
+    const compatRows = (
+      compatRowsRaw?.length
+        ? compatRowsRaw
+        : defaultPersonaCompat(sourceKey, modeParam, limit)
+    ) as CompatRowRaw[];
 
     if (compatRows.length === 0) {
       return NextResponse.json({
@@ -282,7 +290,13 @@ export async function GET(req: NextRequest) {
       return safeJsonError("persona_defs_unavailable", 500);
     }
 
-    const personaDefs = (personaDefsRaw ?? []) as PersonaDefRow[];
+    const dbPersonaDefs = (personaDefsRaw ?? []) as PersonaDefRow[];
+    const personaDefs = [
+      ...dbPersonaDefs,
+      ...DEFAULT_PERSONA_CATALOG.filter(
+        (entry) => keysForDefs.includes(entry.key) && !dbPersonaDefs.some((row) => row.key === entry.key)
+      ),
+    ] as PersonaDefRow[];
 
     const defMap = new Map<string, PersonaDefRow>();
     personaDefs.forEach((row) => defMap.set(row.key, row));

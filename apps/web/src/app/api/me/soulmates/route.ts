@@ -1,5 +1,7 @@
 // apps/web/src/app/api/me/soulmates/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { safeJsonError } from "@/lib/apiSecurity";
+import { findDefaultPersona } from "@/lib/personaCatalog";
 import { supabaseServer } from "@/lib/supabase/server";
 
 type Row = {
@@ -21,6 +23,19 @@ type PersonaDefRow = {
   title: string | null;
 };
 
+function clampInt(value: string | null, min: number, max: number, fallback: number) {
+  const parsed = Number(value ?? "");
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(parsed)));
+}
+
+function isMissingSoulmatesRpc(error: any) {
+  if (String(error?.code ?? "").trim() === "PGRST202") return true;
+  const text = `${error?.message ?? ""} ${error?.details ?? ""}`.toLowerCase();
+  return text.includes("recommend_soulmates") &&
+    (text.includes("could not find") || text.includes("not found") || text.includes("schema cache"));
+}
+
 export async function GET(req: NextRequest) {
   // supabaseServer が Promise / そのまま の両方に対応するラッパ
   const supabaseMaybe = supabaseServer() as any;
@@ -39,10 +54,8 @@ export async function GET(req: NextRequest) {
   }
 
   const { searchParams } = new URL(req.url);
-  const limit = Number(searchParams.get("limit") ?? "20");
-  const offset = Number(searchParams.get("offset") ?? "0");
-  const p_limit = Number.isFinite(limit) ? limit : 20;
-  const p_offset = Number.isFinite(offset) ? offset : 0;
+  const p_limit = clampInt(searchParams.get("limit"), 1, 100, 20);
+  const p_offset = clampInt(searchParams.get("offset"), 0, 1000, 0);
 
   // ① ソウルメイト候補の生データ
   const { data, error } = await supabase.rpc("recommend_soulmates", {
@@ -52,8 +65,14 @@ export async function GET(req: NextRequest) {
   });
 
   if (error) {
-    console.error("[soulmates] rpc error", error);
-    return NextResponse.json({ error: "db_error" }, { status: 500 });
+    if (isMissingSoulmatesRpc(error)) {
+      console.warn("[soulmates] recommendation RPC unavailable; returning an empty result");
+      return NextResponse.json({ soulmates: [], degraded: true });
+    }
+    console.error("[soulmates] recommendation RPC failed", {
+      code: String(error?.code ?? "unknown"),
+    });
+    return safeJsonError("soulmates_unavailable", 500, { soulmates: [] });
   }
 
   const rows = (data ?? []) as Row[];
@@ -74,7 +93,7 @@ export async function GET(req: NextRequest) {
     .in("id", userIds);
 
   if (profErr) {
-    console.error("[soulmates] profiles error", profErr);
+    console.warn("[soulmates] candidate profiles unavailable");
   }
 
   const profileMap = new Map<string, ProfileRow>(
@@ -95,7 +114,7 @@ export async function GET(req: NextRequest) {
     .in("key", personaKeys);
 
   if (defsErr) {
-    console.error("[soulmates] persona_defs error", defsErr);
+    console.warn("[soulmates] persona titles unavailable");
   }
 
   const personaMap = new Map<string, string | null>(
@@ -106,7 +125,9 @@ export async function GET(req: NextRequest) {
   const payload = rows.map((r) => {
     const prof = profileMap.get(r.target_user_id);
     const personaTitle =
-      personaMap.get(r.target_persona_key) ?? r.target_persona_key;
+      personaMap.get(r.target_persona_key) ??
+      findDefaultPersona(r.target_persona_key)?.title ??
+      r.target_persona_key;
 
     return {
       user_id: r.target_user_id,

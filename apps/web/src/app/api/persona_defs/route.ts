@@ -1,6 +1,7 @@
 // apps/web/src/app/api/persona_defs/route.ts
 import { NextResponse } from "next/server";
 import { safeJsonError } from "@/lib/apiSecurity";
+import { findDefaultPersona } from "@/lib/personaCatalog";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { supabaseServer } from "@/lib/supabase/server";
 
@@ -42,6 +43,8 @@ export async function GET(req: Request) {
   }
 
   if (!data) {
+    const fallback = findDefaultPersona(key);
+    if (fallback) return NextResponse.json(fallback);
     return NextResponse.json(
       { error: "persona not found" },
       { status: 404 }

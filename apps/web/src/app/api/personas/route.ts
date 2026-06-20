@@ -3,6 +3,10 @@ export const revalidate = 3600;
 
 import { NextRequest, NextResponse } from "next/server";
 import { safeJsonError } from "@/lib/apiSecurity";
+import {
+  defaultPersonaArchetypes,
+  findDefaultPersona,
+} from "@/lib/personaCatalog";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { supabaseServer } from "@/lib/supabase/server";
 
@@ -43,6 +47,8 @@ export async function GET(req: NextRequest) {
     }
 
     if (!data) {
+      const fallback = findDefaultPersona(key);
+      if (fallback) return NextResponse.json(fallback);
       return NextResponse.json(
         { error: "persona not found" },
         { status: 404 }
@@ -74,15 +80,16 @@ export async function GET(req: NextRequest) {
   }
 
   // フロント側で扱いやすいように image_url -> icon に寄せる
+  const rows = data?.length ? data : defaultPersonaArchetypes();
   const mapped =
-    data?.map((row) => ({
+    rows.map((row) => ({
       key: row.key,
       title: row.title,
       blurb: row.blurb,
       icon: row.image_url ?? null,
       theme: row.theme,
       category: row.category,
-    })) ?? [];
+    }));
 
   return NextResponse.json(mapped);
 }

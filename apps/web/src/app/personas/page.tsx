@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import Link from "next/link";
+import { defaultPersonaArchetypes } from "@/lib/personaCatalog";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { supabaseServer } from "@/lib/supabase/server";
 
@@ -32,12 +33,14 @@ export default async function PersonasCatalogPage() {
         .order("category", { ascending: true })
         .order("title", { ascending: true });
 
-      items = (data ?? []) as Item[];
+      items = (data?.length ? data : defaultPersonaArchetypes()) as Item[];
       hasError = Boolean(error);
     } catch {
       hasError = true;
-      items = [];
+      items = defaultPersonaArchetypes();
     }
+  } else {
+    items = defaultPersonaArchetypes();
   }
 
   // カテゴリごとにグルーピング（空は "General" 扱いに）

@@ -4,20 +4,39 @@ export const dynamic = "force-dynamic";
 import Link from "next/link";
 import PostCard from "@/components/PostCard";
 
-async function fetchTrending(): Promise<{items:any[]; used_personas:string[]}> {
-  const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/api/trending?limit=30`, {
-    // SSR で毎回取りたい（デモなら no-store でもOK）
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    // 失敗しても空配列返す
-    return { items: [], used_personas: [] };
+type TrendingResult = {
+  items: any[];
+  usedPersonas: string[];
+  hasError: boolean;
+};
+
+async function fetchTrending(): Promise<TrendingResult> {
+  try {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/api/trending?limit=30`, {
+      cache: "no-store",
+    });
+    if (!res.ok) return { items: [], usedPersonas: [], hasError: true };
+
+    const json = await res.json().catch(() => null);
+    return {
+      items: Array.isArray(json?.items)
+        ? json.items.filter(
+            (item: unknown) =>
+              Boolean(item) && typeof item === "object" && Boolean(String((item as any).id ?? "").trim())
+          )
+        : [],
+      usedPersonas: Array.isArray(json?.used_personas)
+        ? json.used_personas.map((value: unknown) => String(value ?? "").trim()).filter(Boolean)
+        : [],
+      hasError: false,
+    };
+  } catch {
+    return { items: [], usedPersonas: [], hasError: true };
   }
-  return res.json();
 }
 
 export default async function TrendingPage() {
-  const { items, used_personas } = await fetchTrending();
+  const { items, usedPersonas, hasError } = await fetchTrending();
 
   return (
     <div className="max-w-3xl mx-auto p-6 space-y-4">
@@ -30,9 +49,9 @@ export default async function TrendingPage() {
             </p>
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-2 text-sm">
-            {used_personas.length > 0 ? (
+            {usedPersonas.length > 0 ? (
               <span className="text-xs px-2 py-1 rounded-full border bg-amber-50">
-                あなた向け（{used_personas.join(", ")}）
+                あなた向け（{usedPersonas.join(", ")}）
               </span>
             ) : (
               <span className="text-xs px-2 py-1 rounded-full border bg-gray-50">
@@ -43,6 +62,12 @@ export default async function TrendingPage() {
           </div>
         </div>
       </header>
+
+      {hasError && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+          トレンドを読み込めませんでした。時間をおいて再度お試しください。
+        </div>
+      )}
 
       {items.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">

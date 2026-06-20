@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildPersonaProfile, type PersonaProfile } from "@sns/core";
+import { DEFAULT_PERSONA_CATALOG } from "@/lib/personaCatalog";
 import { supabaseServer } from "@/lib/supabase/server";
 
 type Mode = "friendship" | "romance";
@@ -120,7 +121,15 @@ export async function POST(req: NextRequest) {
     .select("key,title,theme,blurb,talk_style,relation_style,vibe_tags")
     .in("key", [sourceKey, targetKey]);
 
-  const defs = (defsRes.data ?? []) as PersonaDef[];
+  const dbDefs = (defsRes.data ?? []) as PersonaDef[];
+  const defs = [
+    ...dbDefs,
+    ...DEFAULT_PERSONA_CATALOG.filter(
+      (entry) =>
+        (entry.key === sourceKey || entry.key === targetKey) &&
+        !dbDefs.some((row) => row.key === entry.key)
+    ),
+  ] as PersonaDef[];
   const source = defs.find((d) => d.key === sourceKey);
   const target = defs.find((d) => d.key === targetKey);
 
