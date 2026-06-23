@@ -5,6 +5,7 @@ import PostCard from "@/components/PostCard";
 import SignedInDemoGuide from "@/components/SignedInDemoGuide";
 import { fetchPersonaFeedPage } from "@/lib/socialDataClient";
 import { usePersonaFeedState } from "@/lib/useSocialListState";
+import { personaDisplayName } from "@/lib/personaCatalog";
 
 type Strategy = "same" | "compat";
 type BuddyLearningMode = "adaptive" | "stable";
@@ -191,8 +192,8 @@ function buildBuddyMissionRewrites(args: {
   buddyKey: string;
 }) {
   const seed = args.seedText.trim() || "今日の気づき";
-  const baseTag = args.basePersona ? `@${args.basePersona}` : "主キャラ";
-  const buddyTag = `@${args.buddyKey}`;
+  const baseTag = args.basePersona ? personaDisplayName(args.basePersona) : "主キャラ";
+  const buddyTag = personaDisplayName(args.buddyKey);
   return [
     {
       styleKey: "aggressive" as RewriteStyleKey,
@@ -253,17 +254,17 @@ function explainPersonaFeedReason(match: MatchMeta | undefined, basePersona: str
 
   if (reason === "same_persona") {
     lines.push(
-      `あなたの主キャラ${basePersona ? ` (@${basePersona})` : ""}と、この投稿から得られた成長傾向が近いため優先表示されています。`
+      `あなたの主キャラ${basePersona ? `「${personaDisplayName(basePersona)}」` : ""}と、この投稿から得られた成長傾向が近いため優先表示されています。`
     );
   } else if (reason.startsWith("buddy_compat_")) {
     const buddyKey = reason.replace(/^buddy_compat_/, "");
     lines.push(
-      `最近よく使っているバディ組み合わせ（主キャラ${basePersona ? ` @${basePersona}` : ""} × @${buddyKey}）を優先して表示しています。`
+      `最近よく使っているバディ組み合わせ（主キャラ${basePersona ? `「${personaDisplayName(basePersona)}」` : ""} × ${personaDisplayName(buddyKey)}）を優先して表示しています。`
     );
   } else if (reason.startsWith("compat_")) {
     const compatKey = reason.replace(/^compat_/, "");
     lines.push(
-      `主キャラ${basePersona ? ` @${basePersona}` : ""}と相性が高い @${compatKey} 系統として表示されています。`
+      `主キャラ${basePersona ? `「${personaDisplayName(basePersona)}」` : ""}と相性が高い、${personaDisplayName(compatKey)}系の傾向として表示されています。`
     );
   } else if (reason === "fallback_no_scores" || reason === "global_fallback") {
     lines.push("キャラスコア不足のため、通常TLから補完表示されています。");
@@ -883,8 +884,8 @@ export default function PersonaFeedPage() {
   const hint = useMemo(() => {
     if (!basePersona) return "キャラ分析が未作成のため、通常フィード寄りで表示します。";
     return strategy === "same"
-      ? `あなたの主キャラ @${basePersona} と同系統の投稿を優先表示しています。`
-      : `@${basePersona} と相性の良いキャラ投稿を優先表示しています。`;
+      ? `あなたの主キャラ「${personaDisplayName(basePersona)}」と同系統の投稿を優先表示しています。`
+      : `${personaDisplayName(basePersona)}と相性の良い傾向を含む投稿を優先表示しています。`;
   }, [basePersona, strategy]);
 
   const freshItems = useMemo(
@@ -934,7 +935,7 @@ export default function PersonaFeedPage() {
     const xp = buddyMissionXpByBuddy[selected.key] ?? {};
     if (selected.remainingSamples > 0) {
       return {
-        text: `今日のバディミッション: @${selected.key} 投稿を${openTarget}件開いて「${selected.stageLabel}」を進める（残り学習サンプル ${selected.remainingSamples}）`,
+        text: `今日のバディミッション: ${personaDisplayName(selected.key)}系の投稿を${openTarget}件開いて「${selected.stageLabel}」を進める（残り学習サンプル ${selected.remainingSamples}）`,
         key: selected.key,
         goal: openTarget,
         progress,
@@ -945,7 +946,7 @@ export default function PersonaFeedPage() {
       };
     }
     return {
-      text: `今日のバディミッション: @${selected.key} 投稿を1件開いて現在の学習係数を維持する`,
+      text: `今日のバディミッション: ${personaDisplayName(selected.key)}系の投稿を1件開いて現在の学習係数を維持する`,
       key: selected.key,
       goal: openTarget,
       progress,
@@ -1247,7 +1248,7 @@ export default function PersonaFeedPage() {
                 k === basePersona ? "bg-blue-50 border-blue-300" : "bg-gray-50"
               }`}
             >
-              @{k}
+              {personaDisplayName(k)}
             </span>
           ))}
         </div>
@@ -1277,7 +1278,7 @@ export default function PersonaFeedPage() {
                 key={`buddy-${x.key}`}
                 className="text-xs px-2 py-1 rounded-full border border-emerald-300 bg-white"
               >
-                @{x.key} 相性{(Math.max(0, Math.min(1, x.score)) * 100).toFixed(0)}% / 優先+
+                {personaDisplayName(x.key)} 相性{(Math.max(0, Math.min(1, x.score)) * 100).toFixed(0)}% / 優先+
                 {Math.round(Math.max(0.12, Math.min(0.95, Number(x.bonus_scale ?? 0.42))) * 100)}
                 % / 学習
                 {Math.round(
@@ -1296,7 +1297,7 @@ export default function PersonaFeedPage() {
                 <div key={`buddy-progress-${x.key}`} className="space-y-1">
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="font-medium text-emerald-900">
-                      @{x.key} {x.stageLabel}
+                      {personaDisplayName(x.key)} {x.stageLabel}
                     </span>
                     <span className="text-emerald-900/80">
                       {Math.round(x.progress * 100)}% / 信頼{Math.round(x.confidence * 100)}%
@@ -1415,7 +1416,7 @@ export default function PersonaFeedPage() {
                 <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="text-xs font-semibold text-amber-900">
-                      リライト提案 解放済み（@{buddyMission.key} ミッション達成）
+                      リライト提案 解放済み（{personaDisplayName(buddyMission.key)} ミッション達成）
                     </div>
                     <span className="text-[11px] text-amber-900/80">
                       {rewriteLearningLoading
@@ -1548,7 +1549,7 @@ export default function PersonaFeedPage() {
                     {m?.key && (
                       <div className="flex flex-wrap items-center gap-2 text-xs">
                         <span className="px-2 py-0.5 rounded-full border bg-amber-50 border-amber-300">
-                          相性 @{m.key}
+                          相性 {personaDisplayName(m.key)}
                         </span>
                         {pct != null && <span className="opacity-70">一致度 {pct}%</span>}
                         {predPct != null && (
@@ -1642,7 +1643,7 @@ export default function PersonaFeedPage() {
                     {m?.key && (
                       <div className="flex flex-wrap items-center gap-2 text-xs">
                         <span className="px-2 py-0.5 rounded-full border bg-amber-50 border-amber-300">
-                          相性 @{m.key}
+                          相性 {personaDisplayName(m.key)}
                         </span>
                         {pct != null && <span className="opacity-70">一致度 {pct}%</span>}
                         {predPct != null && (

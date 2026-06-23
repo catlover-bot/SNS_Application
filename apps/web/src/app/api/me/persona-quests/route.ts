@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   defaultPersonaCompat,
   findDefaultPersona,
+  personaDisplayName,
 } from "@/lib/personaCatalog";
 import { supabaseServer } from "@/lib/supabase/server";
 
@@ -137,44 +138,45 @@ export async function GET() {
   };
 
   const mainDef = mainKey ? defBy.get(mainKey) : null;
-  const buddyDef = buddyKey ? defBy.get(buddyKey) : null;
-  const contrastDef = contrastKey ? defBy.get(contrastKey) : null;
   const promptTitle = promptRes.data?.title ?? "今日の話題";
   const promptBody = promptRes.data?.body ?? "";
+  const mainDisplayName = personaDisplayName(mainKey);
+  const buddyDisplayName = buddyKey ? personaDisplayName(buddyKey) : "相性キャラ";
+  const contrastDisplayName = contrastKey ? personaDisplayName(contrastKey) : "別キャラ";
 
   const quests = [
     {
       id: "main_streak",
       kind: "focus",
-      title: `主キャラ「${mainDef?.title ?? mainKey}」で1投稿`,
+      title: `主キャラ「${mainDisplayName}」を育てる1投稿`,
       description: "主軸キャラの継続性を伸ばして、レコメンド精度を上げる。",
       xp: 40,
       completed: todayHasPersona(mainKey),
-      seed: `【${mainDef?.title ?? mainKey}モード】${mainDef?.talk_style ?? "短く明るく"}\n${promptTitle}\n${promptBody}`,
+      seed: `【${mainDisplayName}モード】${mainDef?.talk_style ?? "短く明るく"}\n${promptTitle}\n${promptBody}`,
       target_persona_key: mainKey,
-      target_persona_title: mainDef?.title ?? mainKey,
+      target_persona_title: mainDisplayName,
     },
     {
       id: "contrast_break",
       kind: "contrast",
-      title: `逆キャラ「${contrastDef?.title ?? contrastKey ?? "別キャラ"}」で視点転換`,
+      title: `別の傾向「${contrastDisplayName}」で視点転換`,
       description: "あえて逆相性キャラで投稿して、会話の幅を広げる。",
       xp: 60,
       completed: todayHasPersona(contrastKey),
       seed: `【視点転換チャレンジ】普段と逆のキャラ目線で語る。\nテーマ: ${promptTitle}`,
       target_persona_key: contrastKey,
-      target_persona_title: contrastDef?.title ?? contrastKey,
+      target_persona_title: contrastKey ? contrastDisplayName : null,
     },
     {
       id: "duet_reply",
       kind: "duet",
-      title: `相棒キャラ「${buddyDef?.title ?? buddyKey ?? "相性キャラ"}」で返信1件`,
+      title: `相棒キャラ「${buddyDisplayName}」で返信1件`,
       description: "相性の良いキャラと対話すると、反応率が上がりやすい。",
       xp: 55,
       completed: false,
-      seed: `【相棒返信】${mainDef?.title ?? mainKey} × ${buddyDef?.title ?? buddyKey}\n短く質問を添えて返信する`,
+      seed: `【相棒返信】${mainDisplayName} × ${buddyDisplayName}\n短く質問を添えて返信する`,
       target_persona_key: buddyKey,
-      target_persona_title: buddyDef?.title ?? buddyKey,
+      target_persona_title: buddyKey ? buddyDisplayName : null,
     },
   ];
 

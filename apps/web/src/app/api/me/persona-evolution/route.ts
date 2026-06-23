@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { findDefaultPersona } from "@/lib/personaCatalog";
+import { personaDisplayName } from "@/lib/personaCatalog";
 import { supabaseServer } from "@/lib/supabase/server";
 
 type PostRow = {
@@ -33,31 +33,11 @@ function clamp01(v: number | null | undefined) {
   return Math.max(0, Math.min(1, n));
 }
 
-async function buildTitlesMap(supa: any, keys: string[]) {
+async function buildTitlesMap(_supa: any, keys: string[]) {
   const map = new Map<string, string>();
   if (!keys.length) return map;
 
-  const arche = await supa
-    .from("persona_archetype_defs")
-    .select("key,title")
-    .in("key", keys);
-  (arche.data ?? []).forEach((r: any) => {
-    map.set(r.key, r.title ?? r.key);
-  });
-
-  const missing = keys.filter((k) => !map.has(k));
-  if (missing.length > 0) {
-    const defs = await supa.from("persona_defs").select("key,title").in("key", missing);
-    (defs.data ?? []).forEach((r: any) => {
-      map.set(r.key, r.title ?? r.key);
-    });
-  }
-
-  keys.forEach((key) => {
-    if (map.has(key)) return;
-    const fallback = findDefaultPersona(key);
-    if (fallback) map.set(key, fallback.title);
-  });
+  keys.forEach((key) => map.set(key, personaDisplayName(key)));
 
   return map;
 }

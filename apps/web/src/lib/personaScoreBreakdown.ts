@@ -1,3 +1,5 @@
+import { getPersonaProfile } from "@/lib/personaCatalog";
+
 export type PersonaScoreFactor = {
   key: "persona_match" | "ai_style" | "consistency" | "reactions" | "recency";
   label: string;
@@ -189,7 +191,7 @@ export function buildPersonaScoreBreakdowns(args: {
   return personas.map((persona) => {
     const personaKey = String(persona.persona_key ?? "").trim();
     const definition = defsByKey.get(personaKey);
-    const title = definition?.title ?? personaKey;
+    const title = getPersonaProfile(personaKey).displayName;
     const storedScore = normalize01(persona.score);
     const storedConfidence = normalize01(persona.confidence);
     const scoredPosts = postScoresByPersona.get(personaKey) ?? new Map<string, number>();

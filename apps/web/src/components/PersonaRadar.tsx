@@ -11,6 +11,7 @@ import {
   Radar,
   Tooltip,
 } from "recharts";
+import { personaDisplayName } from "@/lib/personaCatalog";
 
 type PersonaRow = {
   persona_key: string;
@@ -60,16 +61,12 @@ export default function PersonaRadar() {
           throw new Error("persona_profile_unavailable");
         }
 
-        const defsByKey = new Map<string, PersonaDef>();
-        (json.defs ?? []).forEach((d) => defsByKey.set(d.key, d));
-
         const points: RadarPoint[] = (json.personas ?? []).map((p) => {
-          const def = defsByKey.get(p.persona_key);
           const raw = typeof p.score === "number" ? p.score : 0;
           const clamped = Math.max(0, Math.min(1, raw));
           return {
             key: p.persona_key,
-            label: def?.title ?? p.persona_key,
+            label: personaDisplayName(p.persona_key),
             score: Math.round(clamped * 100),
           };
         });
@@ -111,7 +108,7 @@ export default function PersonaRadar() {
     return (
       <div className="rounded border bg-yellow-50 text-yellow-800 p-4 text-sm">
         <div className="font-medium">まだキャラスコアがありません</div>
-        <p className="mt-1">まず1件投稿すると、投稿キャラと成長の内訳が表示されます。</p>
+        <p className="mt-1">まず1件投稿すると、その投稿を成長シグナルとしてあなたのキャラ分析が始まります。</p>
         <a href="/compose" className="mt-3 inline-flex rounded-full bg-yellow-700 px-3 py-1.5 text-white">
           投稿してキャラを育てる
         </a>

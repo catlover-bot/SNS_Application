@@ -9,7 +9,7 @@ type Props = {
 const steps = [
   {
     title: "1. 投稿する",
-    body: "短い近況を書くだけ。投稿前に言葉のクセと投稿キャラ候補を確認できます。",
+    body: "短い近況を書くだけ。投稿前に言葉のクセとキャラ成長への影響予測を確認できます。",
     href: "/compose",
     label: "投稿を作る",
   },
@@ -33,9 +33,9 @@ export default function SignedInDemoGuide({ compact = false }: Props) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">Demo flow</div>
-          <h2 className="mt-1 text-base font-semibold text-slate-950">最初の3ステップでキャラSNSを体験する</h2>
+          <h2 className="mt-1 text-base font-semibold text-slate-950">最初の3ステップで恐竜キャラSNSを体験する</h2>
           <p className="mt-1 text-sm leading-6 text-slate-700">
-            投稿をAI判定で楽しみ、その積み重ねからあなたらしい投稿キャラを育てます。
+            投稿をAI判定で楽しみ、そのシグナルの積み重ねからあなた自身のキャラを育てます。
           </p>
         </div>
         <Link href="/search" className="rounded-full border border-blue-200 bg-white px-3 py-1.5 text-sm text-blue-800">

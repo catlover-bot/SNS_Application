@@ -11,6 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { personaDisplayName } from "@/lib/personaCatalog";
 
 type Snapshot = {
   at: string;
@@ -117,7 +118,7 @@ export default function PersonaEvolutionChart({
   const points = useMemo<ChartPoint[]>(() => {
     if (!res?.snapshots?.length) return [];
     return res.snapshots.map((s) => {
-      const title = res.titles?.[s.top_key] ?? s.top_key;
+      const title = personaDisplayName(s.top_key);
       return {
         at: s.at,
         label: formatDate(s.at),

@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
+import { personaDisplayName } from "@/lib/personaCatalog";
 
 function sanitizeKey(raw: string) {
   const cleaned = raw.trim().replace(/[^0-9a-zA-Z_-]+/g, "_");
@@ -170,7 +171,7 @@ export async function GET(
     // keep raw
   }
   const key = sanitizeKey(raw);
-  const title = req.nextUrl.searchParams.get("title");
+  const title = personaDisplayName(key);
 
   const staticPath = await findStaticImage(key);
   if (staticPath) {

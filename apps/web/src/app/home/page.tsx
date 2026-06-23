@@ -18,6 +18,7 @@ import {
 import { fetchFeedPage, fetchTimelineSignals, updateTimelineSignalWeights } from "@/lib/socialDataClient";
 import { useSocialFeedState } from "@/lib/useSocialListState";
 import SignedInDemoGuide from "@/components/SignedInDemoGuide";
+import { personaDisplayName } from "@/lib/personaCatalog";
 
 type FeedItem = {
   id: string;
@@ -511,10 +512,10 @@ export default function HomeFeed() {
                   <a
                     href={`/personas/${encodeURIComponent(p.arche_key)}`}
                     className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border bg-gray-50 hover:bg-gray-100"
-                    title={`@${p.arche_key}`}
+                    title="この投稿から得られたキャラ成長のシグナルです"
                   >
-                    <span>キャラ</span>
-                    <span className="opacity-70">@{p.arche_key}</span>
+                    <span>成長シグナル</span>
+                    <span className="opacity-70">{personaDisplayName(p.arche_key)}系</span>
                   </a>
                 )}
               </div>
@@ -563,10 +564,10 @@ export default function HomeFeed() {
                   <a
                     href={`/personas/${encodeURIComponent(p.arche_key)}`}
                     className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border bg-gray-50 hover:bg-gray-100"
-                    title={`@${p.arche_key}`}
+                    title="この投稿から得られたキャラ成長のシグナルです"
                   >
-                    <span>キャラ</span>
-                    <span className="opacity-70">@{p.arche_key}</span>
+                    <span>成長シグナル</span>
+                    <span className="opacity-70">{personaDisplayName(p.arche_key)}系</span>
                   </a>
                 )}
               </div>

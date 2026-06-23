@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { DEFAULT_PERSONA_CATALOG } from "@/lib/personaCatalog";
+import { DEFAULT_PERSONA_CATALOG, getPersonaProfile } from "@/lib/personaCatalog";
 import { supabaseServer } from "@/lib/supabase/server";
 
 type PersonaDefRow = {
@@ -42,6 +42,7 @@ function tokenize(raw: string) {
 }
 
 function scorePersona(textTokens: string[], row: PersonaDefRow) {
+  const profile = getPersonaProfile(row.key);
   const fields = [
     row.key,
     row.title ?? "",
@@ -50,6 +51,11 @@ function scorePersona(textTokens: string[], row: PersonaDefRow) {
     row.talk_style ?? "",
     row.relation_style ?? "",
     ...(row.vibe_tags ?? []),
+    profile.title,
+    profile.shortSummary,
+    profile.description,
+    ...profile.traits,
+    ...profile.growthSignals,
   ];
   const merged = normalizeText(fields.join(" "));
   const tags = (row.vibe_tags ?? []).map((x) => normalizeText(x)).filter(Boolean);
@@ -76,7 +82,7 @@ function scorePersona(textTokens: string[], row: PersonaDefRow) {
 
   return {
     key: row.key,
-    title: row.title ?? row.key,
+    title: profile.displayName,
     score,
     reasonTokens: uniq(reasons).slice(0, 6),
   };

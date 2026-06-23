@@ -1,6 +1,8 @@
 // apps/web/src/components/PersonaBadge.tsx
 "use client";
 
+import { personaDisplayName } from "@/lib/personaCatalog";
+
 type PersonaBadgeProps = {
   /** 0〜1 or 0〜100 の平均スコア（あれば） */
   avg?: number | null;
@@ -36,7 +38,7 @@ export function PersonaBadge({ avg, personaKey }: PersonaBadgeProps) {
       }}
     >
       {personaKey && (
-        <span className="text-[10px] text-slate-500">@{personaKey}</span>
+        <span className="text-[10px] text-slate-700">{personaDisplayName(personaKey)}</span>
       )}
       {pct != null ? (
         <span className="font-semibold">{pct}%</span>

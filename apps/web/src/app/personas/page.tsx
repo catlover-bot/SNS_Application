@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import Link from "next/link";
-import { defaultPersonaArchetypes } from "@/lib/personaCatalog";
+import { defaultPersonaArchetypes, getPersonaProfile } from "@/lib/personaCatalog";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { supabaseServer } from "@/lib/supabase/server";
 
@@ -43,6 +43,15 @@ export default async function PersonasCatalogPage() {
     items = defaultPersonaArchetypes();
   }
 
+  items = items.map((item) => {
+    const profile = getPersonaProfile(item.key);
+    return {
+      ...item,
+      title: profile.displayName,
+      blurb: profile.shortSummary,
+    };
+  });
+
   // カテゴリごとにグルーピング（空は "General" 扱いに）
   const groups = new Map<string, Item[]>();
   for (const r of items) {
@@ -62,7 +71,7 @@ export default async function PersonasCatalogPage() {
           </div>
           <h1 className="mt-1 text-2xl font-bold">キャラ図鑑</h1>
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            投稿から見えてくるキャラの一覧です。自分の投稿がどのタイプに近いか、相性の良い相手は誰かを探せます。
+            投稿の成長シグナルから育つ恐竜キャラの一覧です。あなたの傾向や、相性の良いタイプを探せます。
           </p>
         </div>
         {hasError && (
@@ -111,8 +120,9 @@ export default async function PersonasCatalogPage() {
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {list.map((r) => {
+                    const profile = getPersonaProfile(r.key);
                     const src = `/api/personas/image/${encodeURIComponent(r.key)}?title=${encodeURIComponent(
-                      r.title
+                      profile.displayName
                     )}`;
                     return (
                       <Link
@@ -124,19 +134,26 @@ export default async function PersonasCatalogPage() {
                           {/* 最も一般的なファイル名を優先。派生(_legend/_lite)は詳細ページ側のマルチフォールバックで吸収 */}
                           <img
                             src={src}
-                            alt={r.title}
+                            alt={profile.displayName}
                             loading="lazy"
                             className="w-full h-full object-contain"
                           />
                         </div>
                         <div className="p-4">
                           <div className="text-base font-semibold group-hover:underline">
-                            {r.title}
+                            {profile.displayName}
                           </div>
-                          <div className="text-xs opacity-60">@{r.key}</div>
+                          <div className="text-xs font-medium text-blue-700">{profile.title}</div>
                           <p className="text-sm opacity-80 mt-1 line-clamp-3">
-                            {r.blurb ?? ""}
+                            {profile.shortSummary}
                           </p>
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {profile.traits.slice(0, 3).map((trait) => (
+                              <span key={trait} className="rounded-full border bg-slate-50 px-2 py-0.5 text-[11px] text-slate-600">
+                                {trait}
+                              </span>
+                            ))}
+                          </div>
                         </div>
                       </Link>
                     );

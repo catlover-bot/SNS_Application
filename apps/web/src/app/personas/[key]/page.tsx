@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import Image from "next/image";
 import { buildPersonaPostingGuide, buildPersonaProfile } from "@sns/core";
+import { getPersonaProfile, personaDisplayName } from "@/lib/personaCatalog";
 
 type PersonaDetail = {
   key: string;
@@ -190,15 +191,12 @@ export default function PersonaDetailPage() {
           `/api/persona_defs?key=${encodeURIComponent(personaKey)}`
         );
         if (!res.ok) {
-          const t = await res.text();
-          console.error("[persona detail page] persona api error", res.status, t);
-          throw new Error(t || res.statusText);
+          throw new Error("persona_unavailable");
         }
         const data = (await res.json()) as PersonaDetail;
         if (!alive) return;
         setPersona(data);
-      } catch (e: any) {
-        console.error("[persona detail page] persona error", e);
+      } catch {
         if (!alive) return;
         setPersonaError("キャラ情報の取得に失敗しました。");
         setPersona(null);
@@ -234,9 +232,7 @@ export default function PersonaDetailPage() {
 
         const res = await fetch(`/api/personas/compat?${params.toString()}`);
         if (!res.ok) {
-          const t = await res.text();
-          console.error("[persona detail page] compat api error", res.status, t);
-          throw new Error(t || res.statusText);
+          throw new Error("persona_compat_unavailable");
         }
 
         const data = (await res.json()) as CompatApiResponse;
@@ -246,7 +242,7 @@ export default function PersonaDetailPage() {
           source_key: data.sourceKey,
           target_key: item.targetKey,
           score: item.score,
-          target_title: item.title,
+          target_title: personaDisplayName(item.targetKey),
           target_theme: item.theme,
           target_vibe_tags: item.vibeTags ?? [],
           target_icon: item.icon,
@@ -257,8 +253,7 @@ export default function PersonaDetailPage() {
           ...prev,
           [mode]: rows,
         }));
-      } catch (e: any) {
-        console.error("[persona detail page] compat error", e);
+      } catch {
         if (!alive) return;
         setCompatError("相性データの取得に失敗しました。");
         setCompat((prev) => ({
@@ -291,14 +286,15 @@ export default function PersonaDetailPage() {
     return [first, rest] as const;
   }, [currentCompat]);
 
-  const iconInfo = resolveIcon(persona?.icon, personaKey, persona?.title ?? personaKey);
+  const catalogProfile = useMemo(() => getPersonaProfile(personaKey), [personaKey]);
+  const iconInfo = resolveIcon(persona?.icon, personaKey, catalogProfile.displayName);
   const profile = useMemo(
     () =>
       buildPersonaProfile({
         key: personaKey,
-        title: persona?.title ?? personaKey,
+        title: catalogProfile.displayName,
         theme: persona?.theme ?? null,
-        blurb: persona?.blurb ?? null,
+        blurb: catalogProfile.description,
         talkStyle: persona?.talk_style ?? null,
         relationStyle: persona?.relation_style ?? null,
         vibeTags: persona?.vibe_tags ?? [],
@@ -310,6 +306,8 @@ export default function PersonaDetailPage() {
       persona?.theme,
       persona?.title,
       persona?.vibe_tags,
+      catalogProfile.description,
+      catalogProfile.displayName,
       personaKey,
     ]
   );
@@ -317,9 +315,9 @@ export default function PersonaDetailPage() {
     () =>
       buildPersonaPostingGuide({
         key: personaKey,
-        title: persona?.title ?? personaKey,
+        title: catalogProfile.displayName,
         theme: persona?.theme ?? null,
-        blurb: persona?.blurb ?? null,
+        blurb: catalogProfile.description,
         talkStyle: persona?.talk_style ?? null,
         relationStyle: persona?.relation_style ?? null,
         vibeTags: persona?.vibe_tags ?? [],
@@ -331,6 +329,8 @@ export default function PersonaDetailPage() {
       persona?.theme,
       persona?.title,
       persona?.vibe_tags,
+      catalogProfile.description,
+      catalogProfile.displayName,
       personaKey,
     ]
   );
@@ -348,7 +348,7 @@ export default function PersonaDetailPage() {
 
       {personaError && (
         <div className="mb-1 text-xs text-red-600">
-          キャラ情報の取得に失敗しました。（キー: {personaKey}）
+          一部の追加情報を取得できなかったため、キャラ図鑑の情報を表示しています。
         </div>
       )}
 
@@ -358,7 +358,7 @@ export default function PersonaDetailPage() {
           {iconInfo.isImage ? (
             <PersonaIconImage
               src={iconInfo.value}
-              alt={persona?.title || personaKey || "キャラアイコン"}
+              alt={catalogProfile.displayName}
               width={64}
               height={64}
               className="h-full w-full object-cover"
@@ -368,17 +368,15 @@ export default function PersonaDetailPage() {
           )}
         </div>
         <div className="min-w-0 flex-1 space-y-1.5">
-          <div className="break-all text-xs text-slate-400">key: {personaKey}</div>
           <div className="truncate text-lg font-semibold sm:text-xl">
-            {loadingPersona
-              ? "読み込み中…"
-              : persona?.title || personaKey || "（名称未設定）"}
+            {loadingPersona ? "読み込み中…" : catalogProfile.displayName}
           </div>
+          <div className="text-sm font-medium text-blue-700">{catalogProfile.title}</div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center rounded-full border bg-slate-50 px-2 py-0.5 text-[11px] text-slate-700">
               {themeLabel(persona?.theme)}
             </span>
-            {(persona?.vibe_tags ?? [])
+            {catalogProfile.traits
               .slice(0, 4)
               .map((tag) => (
                 <span
@@ -398,10 +396,31 @@ export default function PersonaDetailPage() {
           キャラ詳細情報
         </div>
         <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-800">
-          {personaError
-            ? "キャラ詳細情報を読み込めませんでした。"
-            : persona?.blurb ?? "このキャラの詳細情報は準備中です。"}
+          {catalogProfile.description}
         </p>
+      </section>
+
+      <section className="grid gap-3 md:grid-cols-2">
+        <div className="rounded-2xl border bg-emerald-50 px-4 py-3 sm:px-6 sm:py-4">
+          <div className="text-xs font-semibold text-emerald-800">育ちやすい投稿</div>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-emerald-950">
+            {catalogProfile.growthSignals.map((signal) => <li key={signal}>{signal}</li>)}
+          </ul>
+        </div>
+        <div className="rounded-2xl border bg-blue-50 px-4 py-3 sm:px-6 sm:py-4">
+          <div className="text-xs font-semibold text-blue-800">AI判定との関係</div>
+          <p className="mt-1 text-xs leading-5 text-blue-800">
+            AI判定は投稿のクセを読み、その積み重ねがキャラ成長の材料になります。
+          </p>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-blue-950">
+            {(catalogProfile.aiScoreHints ?? []).map((hint) => <li key={hint}>{hint}</li>)}
+          </ul>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 sm:px-6 sm:py-4">
+        <div className="text-xs font-semibold text-amber-900">進化ヒント</div>
+        <p className="mt-1 text-sm leading-6 text-amber-950">{catalogProfile.evolutionHint}</p>
       </section>
 
       <section className="rounded-2xl border bg-slate-50 px-4 py-3 sm:px-6 sm:py-4 space-y-2">
@@ -545,8 +564,7 @@ export default function PersonaDetailPage() {
             {topCompat && (() => {
               const tp = topCompat;
 
-              const displayTitle = tp.target_title || "（名称未設定）";
-              const displayKey = tp.target_key || "unknown";
+              const displayTitle = personaDisplayName(tp.target_key);
               const displayVibes = tp.target_vibe_tags ?? [];
               const icon = resolveIcon(tp.target_icon ?? null, tp.target_key ?? "unknown", displayTitle);
 
@@ -576,7 +594,6 @@ export default function PersonaDetailPage() {
                     <div className="text-base font-semibold sm:text-lg">
                       {displayTitle}
                     </div>
-                    <div className="text-[11px] text-slate-500">@{displayKey}</div>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       <span className="inline-flex items-center rounded-full border border-rose-100 bg-white/70 px-2 py-0.5 text-[11px] text-rose-700">
                         {MODE_LABEL[mode]} {percent(tp.score)}%{" "}
@@ -618,8 +635,7 @@ export default function PersonaDetailPage() {
             {restCompat.length > 0 && (
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 {restCompat.map((row) => {
-                  const displayTitle = row.target_title || "（名称未設定）";
-                  const displayKey = row.target_key || "unknown";
+                  const displayTitle = personaDisplayName(row.target_key);
                   const displayVibes = row.target_vibe_tags ?? [];
                   const icon = resolveIcon(
                     row.target_icon ?? null,
@@ -652,9 +668,6 @@ export default function PersonaDetailPage() {
                           <div className="min-w-0">
                             <div className="truncate text-sm font-semibold">
                               {displayTitle}
-                            </div>
-                            <div className="truncate text-[11px] text-slate-500">
-                              @{displayKey}
                             </div>
                           </div>
                         </div>

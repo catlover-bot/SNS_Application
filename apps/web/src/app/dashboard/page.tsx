@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import PostCard from "@/components/PostCard";
 // 関数を supabase という名前で受ける（※関数なので呼び出しは supabase()）
 import { supabaseClient as supabase } from "@/lib/supabase/client";
+import { getPersonaProfile, personaDisplayName } from "@/lib/personaCatalog";
 
 type Persona = {
   user_id: string;
@@ -127,7 +128,7 @@ export default function DashboardPage() {
         setP({
           user_id: userId ?? "me",
           persona_key: top.persona_key,
-          title: top.persona_key,
+          title: personaDisplayName(top.persona_key),
           icon: null,
           score: Math.max(0, Math.min(1, Number(top.score ?? 0))),
           confidence: Math.max(0, Math.min(1, Number(top.confidence ?? 0))),
@@ -179,7 +180,8 @@ export default function DashboardPage() {
               {p.icon ?? "P"}
             </div>
             <div>
-              <div className="text-lg font-semibold">{p.title ?? p.persona_key}</div>
+              <div className="text-lg font-semibold">{personaDisplayName(p.persona_key)}</div>
+              <div className="text-xs text-blue-700">{getPersonaProfile(p.persona_key).title}</div>
               <div className="text-sm opacity-70">
                 スコア {(p.score * 100).toFixed(0)}% / 信頼度 {(p.confidence * 100).toFixed(0)}%・更新 {new Date(p.updated_at).toLocaleString()}
               </div>

@@ -11,6 +11,7 @@ import {
 } from "@sns/core";
 import { supabaseClient as supabase } from "@/lib/supabase/client";
 import SignedInDemoGuide from "@/components/SignedInDemoGuide";
+import { personaDisplayName } from "@/lib/personaCatalog";
 
 type AnalysisFlags = {
   noExif?: boolean;
@@ -300,7 +301,7 @@ export default function Compose() {
       const prev = map.get(c.key);
       map.set(c.key, {
         key: c.key,
-        title: c.title ?? prev?.title ?? c.key,
+        title: c.title ?? prev?.title ?? personaDisplayName(c.key),
         theme: prev?.theme ?? null,
         blurb: prev?.blurb ?? null,
       });
@@ -331,13 +332,13 @@ export default function Compose() {
       primary: {
         text,
         personaKey: selectedPersonaKey,
-        personaTitle: selectedPersona?.title ?? selectedPersonaKey,
+        personaTitle: selectedPersona?.title ?? personaDisplayName(selectedPersonaKey),
         vibeTags: selectedPersona?.reasonTokens ?? [],
       },
       secondary: {
         text,
         personaKey: blendSecondary.key,
-        personaTitle: blendSecondary.title ?? blendSecondary.key,
+        personaTitle: blendSecondary.title ?? personaDisplayName(blendSecondary.key),
         personaTheme: blendSecondary.theme ?? null,
       },
     });
@@ -417,7 +418,10 @@ export default function Compose() {
           throw new Error("成長傾向の取得に失敗しました");
         }
         if (stop) return;
-        const items = (json.items ?? []) as PersonaSuggestion[];
+        const items = ((json.items ?? []) as PersonaSuggestion[]).map((item) => ({
+          ...item,
+          title: personaDisplayName(item.key),
+        }));
         setPersonaCandidates(items);
         if (items.length === 0) {
           setSelectedPersonaKey(null);
@@ -472,7 +476,7 @@ export default function Compose() {
           ? (json.items as Array<any>)
               .map((x) => ({
                 targetKey: String(x?.targetKey ?? "").trim(),
-                title: String(x?.title ?? x?.targetKey ?? "").trim(),
+                title: personaDisplayName(String(x?.targetKey ?? "").trim()),
                 score: Number(x?.score ?? 0) || 0,
                 relationLabel:
                   x?.relationLabel == null ? null : String(x.relationLabel),
@@ -534,7 +538,9 @@ export default function Compose() {
         const json = await res.json().catch(() => null);
         if (!res.ok || !Array.isArray(json)) return;
         if (stop) return;
-        const rows = (json as PersonaCatalogItem[]).filter((x) => x?.key);
+        const rows = (json as PersonaCatalogItem[])
+          .filter((x) => x?.key)
+          .map((x) => ({ ...x, title: personaDisplayName(x.key) }));
         setPersonaCatalog(rows);
       } catch {
         if (!stop) setPersonaCatalog([]);
@@ -797,6 +803,9 @@ export default function Compose() {
             </div>
           ))}
         </div>
+        <p className="mt-2 text-xs leading-5 text-blue-800">
+          AI判定は1件の投稿のクセを読むもの。キャラ成長は、そのクセが履歴として積み重なって育つものです。
+        </p>
       </section>
 
       {!lastPostedPostId && text.trim().length === 0 ? <SignedInDemoGuide compact /> : null}
@@ -943,7 +952,7 @@ export default function Compose() {
                   <div className="text-xs opacity-70 mt-1">
                     投稿のクセ {lastPostedPerformance.post.lieScorePct}% /{" "}
                     {lastPostedPerformance.post.persona?.selected
-                      ? `成長シグナル @${lastPostedPerformance.post.persona.selected}`
+                      ? `成長シグナル ${personaDisplayName(lastPostedPerformance.post.persona.selected)}系`
                       : "成長シグナル未分析"}
                   </div>
                 </div>
@@ -1084,7 +1093,7 @@ export default function Compose() {
       {missionRewriteAttribution && (
         <div className="text-xs rounded border border-amber-200 bg-amber-50 px-3 py-2 flex flex-wrap items-center gap-2">
           <span className="font-medium">ミッションリライト適用中</span>
-          <span>@{missionRewriteAttribution.buddyPersonaKey}</span>
+          <span>{personaDisplayName(missionRewriteAttribution.buddyPersonaKey)}</span>
           <span>・</span>
           <span>{missionRewriteAttribution.styleLabel}</span>
           <button
@@ -1152,7 +1161,7 @@ export default function Compose() {
                     : "bg-white"
                 }`}
               >
-                {c.title} @{c.key}
+                {c.title}
               </button>
             ))}
           </div>
@@ -1237,7 +1246,7 @@ export default function Compose() {
                     : "bg-white"
                 }`}
               >
-                {item.title} {toCompatPercent(item.score)}%
+                {personaDisplayName(item.targetKey)} {toCompatPercent(item.score)}%
                 {item.relationLabel ? ` / ${item.relationLabel}` : ""}
               </button>
             ))}
@@ -1264,7 +1273,7 @@ export default function Compose() {
                 >
                   {blendSecondaryOptions.map((p) => (
                     <option key={p.key} value={p.key}>
-                      {p.title} @{p.key}
+                      {personaDisplayName(p.key)}
                     </option>
                   ))}
                 </select>

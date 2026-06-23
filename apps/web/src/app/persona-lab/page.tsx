@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { personaDisplayName } from "@/lib/personaCatalog";
 
 type PersonaItem = {
   key: string;
@@ -120,7 +121,10 @@ export default function PersonaLabPage() {
         const res = await fetch("/api/personas", { cache: "no-store" });
         const json = await res.json().catch(() => null);
         if (!res.ok) throw new Error("キャラ一覧の取得に失敗しました");
-        const rows = (Array.isArray(json) ? json : []) as PersonaItem[];
+        const rows = ((Array.isArray(json) ? json : []) as PersonaItem[]).map((item) => ({
+          ...item,
+          title: personaDisplayName(item.key),
+        }));
         if (stop) return;
         setPersonas(rows);
         if (rows.length > 0) setSourceKey(rows[0].key);
@@ -152,7 +156,10 @@ export default function PersonaLabPage() {
         });
         const json = await res.json().catch(() => null);
         if (!res.ok) throw new Error("相性データ取得に失敗しました");
-        const rows = (json?.items ?? []) as CompatItem[];
+        const rows = ((json?.items ?? []) as CompatItem[]).map((item) => ({
+          ...item,
+          title: personaDisplayName(item.targetKey),
+        }));
         if (stop) return;
         setCompatItems(rows);
         if (rows.length > 0) {
@@ -299,7 +306,7 @@ export default function PersonaLabPage() {
             >
               {personas.map((p) => (
                 <option key={p.key} value={p.key}>
-                  {p.title} (@{p.key})
+                  {p.title}
                 </option>
               ))}
             </select>
@@ -327,7 +334,7 @@ export default function PersonaLabPage() {
             >
               {compatItems.map((c) => (
                 <option key={c.targetKey} value={c.targetKey}>
-                  {c.title} (@{c.targetKey})
+                  {c.title}
                 </option>
               ))}
             </select>
@@ -364,7 +371,7 @@ export default function PersonaLabPage() {
               />
             </div>
             <div className="text-sm opacity-80">
-              {sourcePersona?.title ?? sourceKey} × {selectedCompat.title} の{" "}
+              {sourcePersona?.title ?? personaDisplayName(sourceKey)} × {selectedCompat.title} の{" "}
               {mode === "romance" ? "恋愛" : "友情"} 相性
             </div>
             {selectedCompat.relationStyle && (
@@ -568,7 +575,6 @@ export default function PersonaLabPage() {
                   }`}
                 >
                   <div className="font-medium text-sm">{item.title}</div>
-                  <div className="text-xs opacity-60">@{item.targetKey}</div>
                   <div className="mt-2 text-xs">相性 {pct}%</div>
                   {item.insights?.chemistryType ? (
                     <div className="text-xs opacity-70 mt-1">{item.insights.chemistryType}</div>

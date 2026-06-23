@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { findDefaultPersona } from "@/lib/personaCatalog";
+import { personaDisplayName } from "@/lib/personaCatalog";
 import { supabaseServer } from "@/lib/supabase/server";
 
 type PostRow = {
@@ -40,31 +40,11 @@ function toRangeWindow() {
   };
 }
 
-async function resolveTitles(supa: any, keys: string[]) {
+async function resolveTitles(_supa: any, keys: string[]) {
   const uniq = Array.from(new Set(keys.filter(Boolean)));
   if (!uniq.length) return {} as Record<string, string>;
 
-  const map = new Map<string, string>();
-
-  const arche = await supa
-    .from("persona_archetype_defs")
-    .select("key,title")
-    .in("key", uniq);
-  (arche.data ?? []).forEach((r: any) => {
-    map.set(r.key, r.title ?? r.key);
-  });
-
-  const missing = uniq.filter((k) => !map.has(k));
-  if (missing.length > 0) {
-    const defs = await supa.from("persona_defs").select("key,title").in("key", missing);
-    (defs.data ?? []).forEach((r: any) => {
-      map.set(r.key, r.title ?? r.key);
-    });
-  }
-
-  return Object.fromEntries(
-    uniq.map((k) => [k, map.get(k) ?? findDefaultPersona(k)?.title ?? k])
-  );
+  return Object.fromEntries(uniq.map((key) => [key, personaDisplayName(key)]));
 }
 
 export async function GET() {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildPersonaProfile, type PersonaProfile } from "@sns/core";
-import { DEFAULT_PERSONA_CATALOG } from "@/lib/personaCatalog";
+import { DEFAULT_PERSONA_CATALOG, personaDisplayName } from "@/lib/personaCatalog";
 import { supabaseServer } from "@/lib/supabase/server";
 
 type Mode = "friendship" | "romance";
@@ -143,8 +143,8 @@ export async function POST(req: NextRequest) {
 
   const compat = (compatRes.data ?? null) as CompatRow | null;
 
-  const sourceTitle = source?.title ?? sourceKey;
-  const targetTitle = target?.title ?? targetKey;
+  const sourceTitle = personaDisplayName(sourceKey);
+  const targetTitle = personaDisplayName(targetKey);
   const sourceProfile = buildPersonaProfile({
     key: source?.key ?? sourceKey,
     title: sourceTitle,

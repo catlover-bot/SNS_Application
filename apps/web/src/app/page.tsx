@@ -141,10 +141,10 @@ export default function Home() {
               Persona-based SNS
             </div>
             <h1 className="text-3xl font-bold leading-tight text-slate-950">
-              投稿するほど、あなたのキャラが育つ。
+              投稿するほど、あなたの恐竜キャラが育つ。
             </h1>
             <p className="text-sm leading-6 text-slate-600">
-              PersonaLens は、投稿のクセをAIが読み取り、そのシグナルの積み重ねからあなた自身のキャラが育つSNSです。
+              PersonaLens は、投稿のクセをAIが読み取り、そのシグナルの積み重ねからあなた自身の恐竜キャラが育つSNSです。
               まじめな事実確認ではなく、言葉のクセを遊びながら楽しめます。
             </p>
             <div className="flex flex-wrap gap-2">
@@ -174,7 +174,7 @@ export default function Home() {
               {[
                 ["1", "投稿する", "近況や気づきを、いつもの言葉で書くだけ。"],
                 ["2", "AIが投稿のクセを判定", "4つのスコアと理由・タグで雰囲気を見える化。"],
-                ["3", "あなたのキャラが育つ", "投稿ごとのシグナルと反応が積み重なり、キャラスコアが少しずつ変化。"],
+                ["3", "あなたの恐竜キャラが育つ", "投稿ごとのシグナルと反応が積み重なり、キャラスコアが少しずつ変化。"],
               ].map(([number, title, body]) => (
                 <div key={number} className="flex gap-3 rounded-lg border border-blue-100 bg-white/80 p-3">
                   <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 font-bold text-white">

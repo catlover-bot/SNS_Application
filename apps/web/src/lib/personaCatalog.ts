@@ -1,6 +1,18 @@
-export type PersonaCatalogEntry = {
+export type PersonaProfile = {
   key: string;
+  displayName: string;
+  speciesName?: string;
   title: string;
+  shortSummary: string;
+  description: string;
+  traits: string[];
+  growthSignals: string[];
+  aiScoreHints?: string[];
+  evolutionHint: string;
+  toneKeywords?: string[];
+};
+
+export type PersonaCatalogEntry = PersonaProfile & {
   theme: "social" | "chaos" | "logic";
   vibe_tags: string[];
   talk_style: string;
@@ -15,7 +27,16 @@ export type PersonaCatalogEntry = {
 export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
   {
     key: "afterparty_host",
-    title: "アフターパーティーの主催者",
+    displayName: "ネオンラプトル",
+    speciesName: "ネオンラプトル属",
+    title: "場を明るく動かす盛り上げ型",
+    shortSummary: "会話のきっかけを軽やかに作り、人を巻き込む社交派恐竜。",
+    description: "誰かが入りやすい話題を投げ、タイムラインの温度を自然に上げます。近況共有や問いかけが積み重なるほど、明るい主催者らしさが育ちます。",
+    traits: ["社交的", "会話の起点", "前向き", "テンポが良い"],
+    growthSignals: ["仲間を巻き込む問いかけ", "イベントや近況の共有", "前向きなリアクション", "会話を広げる一言"],
+    aiScoreHints: ["ネタ・ジョーク度や軽い盛ってる度が親しみやすさにつながります", "自慢・マウント感が強すぎない投稿と好相性です"],
+    evolutionHint: "次は、みんなが答えやすい質問をひとつ添えると、ネオンラプトルがさらに育ちます。",
+    toneKeywords: ["明るい", "巻き込む", "テンポ"],
     theme: "social",
     vibe_tags: ["社交", "会話", "盛り上げ"],
     talk_style: "相手を巻き込むテンポの良い話し方",
@@ -26,7 +47,16 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
   },
   {
     key: "anchor_friend",
-    title: "安心のアンカーフレンド",
+    displayName: "ガードケラトプス",
+    speciesName: "ガードケラトプス属",
+    title: "安心感で支える聞き上手",
+    shortSummary: "相手の言葉を受け止め、落ち着ける足場を作る守護型恐竜。",
+    description: "急いで結論を出さず、相手の気持ちや状況を丁寧に受け止めます。共感や振り返りを含む投稿が増えるほど、信頼される支え役として育ちます。",
+    traits: ["傾聴", "安心感", "誠実", "落ち着き"],
+    growthSignals: ["相手を気遣う言葉", "感情を整理した振り返り", "穏やかな助言", "感謝や労いの共有"],
+    aiScoreHints: ["事実っぽさが高く、盛ってる度が控えめな投稿と好相性です", "ネタ度よりも穏やかな理由説明が成長材料になります"],
+    evolutionHint: "次は、相手の気持ちを受け止めたうえで自分の経験を一つ添えると、ガードケラトプスが育ちます。",
+    toneKeywords: ["穏やか", "受け止める", "信頼"],
     theme: "social",
     vibe_tags: ["安心", "傾聴", "信頼"],
     talk_style: "相手の言葉を受け止めてから穏やかに返す",
@@ -37,7 +67,16 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
   },
   {
     key: "peace_maker",
-    title: "ピースメーカー",
+    displayName: "ハーモニサウルス",
+    speciesName: "ハーモニサウルス属",
+    title: "違いをつなぐ調整型",
+    shortSummary: "意見の違いから共通点を見つけ、会話を前へ運ぶ調和型恐竜。",
+    description: "対立を勝ち負けにせず、それぞれの立場を言葉にして橋をかけます。複数の視点や合意点を示す投稿が、調整役としての輪郭を強くします。",
+    traits: ["共感", "調整力", "協力的", "公平"],
+    growthSignals: ["複数の立場を紹介する投稿", "共通点の発見", "対話を促す提案", "協力への感謝"],
+    aiScoreHints: ["事実っぽさと穏やかな表現のバランスが成長に寄与します", "自慢・マウント感が低い投稿と好相性です"],
+    evolutionHint: "次は、異なる意見の共通点を一つ言葉にすると、ハーモニサウルスがさらに育ちます。",
+    toneKeywords: ["橋渡し", "共感", "バランス"],
     theme: "social",
     vibe_tags: ["調整", "共感", "協力"],
     talk_style: "意見の違いをほぐしながら共通点を探す",
@@ -48,7 +87,16 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
   },
   {
     key: "mood_chef",
-    title: "ムードの料理人",
+    displayName: "ムードドン",
+    speciesName: "ムードドン属",
+    title: "言葉の温度を整える空気読み型",
+    shortSummary: "場の空気に合わせて、言葉の濃さと温度を上手に調整する感性派恐竜。",
+    description: "同じ内容でも、相手や場面に合う伝え方を選びます。雰囲気の描写や気遣いのある一言が増えるほど、ムードを整える力が育ちます。",
+    traits: ["空気を読む", "気遣い", "表現力", "柔軟"],
+    growthSignals: ["場の雰囲気を描く投稿", "相手に合わせた言い換え", "感情の温度を伝える一言", "さりげない気遣い"],
+    aiScoreHints: ["ネタ・ジョーク度を場面に合わせて使う投稿と好相性です", "盛ってる度と事実っぽさのバランスが個性になります"],
+    evolutionHint: "次は、その場の空気がどう変わったかまで書くと、ムードドンの感性がさらに育ちます。",
+    toneKeywords: ["温度感", "気配り", "表現"],
     theme: "social",
     vibe_tags: ["空気", "気遣い", "温度感"],
     talk_style: "場の空気を見て言葉の濃さを調整する",
@@ -59,7 +107,16 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
   },
   {
     key: "chaos_comic",
-    title: "カオスコミック",
+    displayName: "カオスレックス",
+    speciesName: "カオスレックス属",
+    title: "予想外を笑いに変える爆発型",
+    shortSummary: "日常のズレやハプニングを、勢いのある笑いへ変えるトリックスター恐竜。",
+    description: "予想外の展開や大胆なたとえで、タイムラインに強いアクセントを作ります。失敗談やオチのある短文が積み重なるほど、愛されるカオスが育ちます。",
+    traits: ["ユーモア", "大胆", "瞬発力", "意外性"],
+    growthSignals: ["オチのある失敗談", "意外なたとえ", "勢いのある短文", "日常のズレへのツッコミ"],
+    aiScoreHints: ["ネタ・ジョーク度と盛ってる度が高めの投稿で育ちやすいです", "事実っぽさを少し残すと笑いが伝わりやすくなります"],
+    evolutionHint: "次は、勢いのある一言に具体的な状況を一つ足すと、カオスレックスの笑いがさらに育ちます。",
+    toneKeywords: ["笑い", "勢い", "予想外"],
     theme: "chaos",
     vibe_tags: ["笑い", "勢い", "ボケ"],
     talk_style: "予想外の一言と軽いユーモアで展開する",
@@ -70,7 +127,16 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
   },
   {
     key: "spark_maker",
-    title: "ひらめきの着火役",
+    displayName: "スパークプテラ",
+    speciesName: "スパークプテラ属",
+    title: "ひらめきを素早く飛ばす発想型",
+    shortSummary: "小さな違和感からアイデアを着火し、軽やかに共有する発想派恐竜。",
+    description: "完成前の考えでも、面白い種を見つけると素早く言葉にします。新しい試みや仮説、試作の共有が増えるほど、発想の翼が大きく育ちます。",
+    traits: ["好奇心", "発想力", "スピード", "挑戦的"],
+    growthSignals: ["新しいアイデア", "試してみた報告", "小さな仮説", "次に作りたいもの"],
+    aiScoreHints: ["軽い盛ってる度やネタ・ジョーク度が発想の勢いになります", "具体的な事実を一つ添えると成長シグナルが強まります"],
+    evolutionHint: "次は、思いつきに『まず何を試すか』を添えると、スパークプテラがさらに高く飛びます。",
+    toneKeywords: ["ひらめき", "軽快", "挑戦"],
     theme: "chaos",
     vibe_tags: ["発想", "好奇心", "スピード"],
     talk_style: "思いついたアイデアを短くテンポ良く投げる",
@@ -81,7 +147,16 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
   },
   {
     key: "why_comic",
-    title: "なぜなぜコミック",
+    displayName: "クエストラプトル",
+    speciesName: "クエストラプトル属",
+    title: "問いを楽しむ探究型",
+    shortSummary: "素朴な疑問を楽しい探究へ変え、みんなの好奇心を刺激する恐竜。",
+    description: "当たり前をそのまま受け取らず、面白い角度から『なぜ？』を投げかけます。質問、比較、気づきの投稿が積み重なるほど、探究心が鋭く育ちます。",
+    traits: ["探究心", "質問上手", "ユーモア", "観察力"],
+    growthSignals: ["素朴な疑問", "比較して気づいたこと", "答えを募る問いかけ", "調べて分かった発見"],
+    aiScoreHints: ["事実っぽさとネタ・ジョーク度が両立した投稿と好相性です", "断定を少し控えて問いを残すと個性が伸びます"],
+    evolutionHint: "次は、疑問に自分なりの仮説を一つ添えると、クエストラプトルの探究力が育ちます。",
+    toneKeywords: ["なぜ", "発見", "好奇心"],
     theme: "chaos",
     vibe_tags: ["質問", "ユーモア", "探究"],
     talk_style: "「なんで？」を楽しい角度から投げかける",
@@ -92,7 +167,16 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
   },
   {
     key: "fact_lover",
-    title: "ファクトラバー",
+    displayName: "ロジックラプトル",
+    speciesName: "ロジックラプトル属",
+    title: "根拠と検証で進む実装型",
+    shortSummary: "整理された進捗と検証結果で育つ、実装型の知性派恐竜。",
+    description: "感覚だけで決めず、事実と意見を分けて判断材料を共有します。具体的な作業ログ、比較、改善メモが増えるほど、頼れる分析力が育ちます。",
+    traits: ["論理的", "検証好き", "具体的", "改善志向"],
+    growthSignals: ["実装や作業の進捗", "検証結果", "数値を使った比較", "改善メモや学び"],
+    aiScoreHints: ["事実っぽさが高く、盛ってる度が低い投稿と好相性です", "自慢よりも根拠や再現手順を示すほど育ちやすくなります"],
+    evolutionHint: "次は、なぜその方法を選んだのかまで書くと、ロジックラプトルの思考力がさらに育ちます。",
+    toneKeywords: ["根拠", "検証", "改善"],
     theme: "logic",
     vibe_tags: ["事実", "根拠", "比較"],
     talk_style: "根拠と結論を分けて端的に話す",
@@ -103,7 +187,16 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
   },
   {
     key: "moon_strategist",
-    title: "月夜の戦略家",
+    displayName: "ルナストラドン",
+    speciesName: "ルナストラドン属",
+    title: "静かに次の一手を組み立てる戦略型",
+    shortSummary: "状況を俯瞰し、無理のない次の一手を設計する夜型の戦略恐竜。",
+    description: "目の前の出来事だけでなく、目的や順序まで整理して考えます。計画、優先順位、振り返りの投稿が積み重なるほど、先を読む力が育ちます。",
+    traits: ["戦略的", "計画的", "冷静", "俯瞰"],
+    growthSignals: ["次の一手の整理", "優先順位の共有", "計画の振り返り", "リスクと対策"],
+    aiScoreHints: ["事実っぽさが高く、盛ってる度が控えめな投稿と好相性です", "自慢よりも判断理由を示すと戦略性が伸びます"],
+    evolutionHint: "次は、目標・制約・次の一手をセットで書くと、ルナストラドンの戦略眼が育ちます。",
+    toneKeywords: ["計画", "俯瞰", "次の一手"],
     theme: "logic",
     vibe_tags: ["戦略", "観察", "計画"],
     talk_style: "状況を整理し、次の一手を静かに提案する",
@@ -114,7 +207,16 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
   },
   {
     key: "nocturnal_sage",
-    title: "夜更けの賢者",
+    displayName: "ノクタサウルス",
+    speciesName: "ノクタサウルス属",
+    title: "問いを深める内省型",
+    shortSummary: "静かな観察と深い振り返りから、本質を見つける思索派恐竜。",
+    description: "すぐに答えへ飛びつかず、気づきや迷いを丁寧に掘り下げます。長めの振り返りや考えの変化を共有するほど、落ち着いた知性が育ちます。",
+    traits: ["内省的", "深掘り", "静か", "洞察力"],
+    growthSignals: ["一日の深い振り返り", "考えが変わった理由", "まだ答えのない問い", "観察から得た洞察"],
+    aiScoreHints: ["事実っぽさが高く、ネタ度や盛ってる度が控えめな投稿と好相性です", "断定よりも思考の過程を見せると育ちます"],
+    evolutionHint: "次は、考えが変わったきっかけを具体的に書くと、ノクタサウルスの洞察が深まります。",
+    toneKeywords: ["内省", "静けさ", "洞察"],
     theme: "logic",
     vibe_tags: ["深掘り", "静けさ", "内省"],
     talk_style: "急がず問いを深め、考えの輪郭を整える",
@@ -125,7 +227,16 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
   },
   {
     key: "truth_archer",
-    title: "真実の弓使い",
+    displayName: "マコトレックス",
+    speciesName: "マコトレックス属",
+    title: "本質をまっすぐ届ける直球型",
+    shortSummary: "余分なノイズを外し、大切な論点を誠実に届けるストレート型恐竜。",
+    description: "曖昧な表現を減らし、何が大切かを短く明確に伝えます。結論、理由、具体例が揃った投稿が増えるほど、言葉の芯が強く育ちます。",
+    traits: ["誠実", "率直", "明快", "本質志向"],
+    growthSignals: ["結論が明確な投稿", "理由を添えた意見", "誤解をほどく説明", "大切な論点の整理"],
+    aiScoreHints: ["事実っぽさが高く、盛ってる度が低い投稿と特に好相性です", "自慢・マウント感を抑えるほど誠実さが伝わります"],
+    evolutionHint: "次は、結論の根拠になる具体例を一つ添えると、マコトレックスの言葉がさらに強くなります。",
+    toneKeywords: ["率直", "明快", "誠実"],
     theme: "logic",
     vibe_tags: ["本質", "直球", "誠実"],
     talk_style: "論点を絞って、真っすぐに結論を届ける",
@@ -136,7 +247,16 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
   },
   {
     key: "garden_keeper",
-    title: "言葉の庭師",
+    displayName: "グロウケラトプス",
+    speciesName: "グロウケラトプス属",
+    title: "小さな前進を育てる継続型",
+    shortSummary: "人やアイデアの小さな変化を見つけ、丁寧に育てる伴走型恐竜。",
+    description: "派手な成果だけでなく、昨日からの小さな前進を大切にします。継続記録、学び、誰かを励ます投稿が積み重なるほど、育てる力が強くなります。",
+    traits: ["継続力", "丁寧", "育成上手", "温かい"],
+    growthSignals: ["小さな進捗の記録", "続けて分かったこと", "誰かへの励まし", "試行錯誤の共有"],
+    aiScoreHints: ["事実っぽさが高く、穏やかな投稿と好相性です", "大きく盛るより、小さな変化を具体的に書くほど育ちます"],
+    evolutionHint: "次は、昨日との違いを一つ書くと、グロウケラトプスの継続力がさらに育ちます。",
+    toneKeywords: ["継続", "育成", "丁寧"],
     theme: "social",
     vibe_tags: ["育成", "丁寧", "継続"],
     talk_style: "小さな変化を見つけて丁寧に言葉を返す",
@@ -152,11 +272,59 @@ export function findDefaultPersona(key: string | null | undefined) {
   return DEFAULT_PERSONA_CATALOG.find((entry) => entry.key === normalized) ?? null;
 }
 
+const UNKNOWN_PERSONA_PROFILE: PersonaProfile = {
+  key: "unknown_persona",
+  displayName: "ミライサウルス",
+  speciesName: "未発見種",
+  title: "まだ名前のない進化途中の恐竜",
+  shortSummary: "投稿の成長シグナルを集めながら、これから個性が見えてくる恐竜。",
+  description: "まだ十分な投稿傾向が集まっていないため、進化の途中にいます。投稿を重ねると、あなたらしい恐竜キャラの輪郭が少しずつ見えてきます。",
+  traits: ["進化途中", "可能性", "観察中"],
+  growthSignals: ["日々の近況", "最近考えたこと", "小さな挑戦"],
+  aiScoreHints: ["AI判定の4つの成分が積み重なると、得意な傾向が見えてきます"],
+  evolutionHint: "まずは短い近況をいくつか投稿して、成長シグナルを集めてみましょう。",
+  toneKeywords: ["これから", "成長", "発見"],
+};
+
+export function getPersonaProfile(key: string | null | undefined): PersonaProfile {
+  const normalized = String(key ?? "").trim();
+  const known = findDefaultPersona(normalized);
+  return known ?? { ...UNKNOWN_PERSONA_PROFILE, key: normalized || UNKNOWN_PERSONA_PROFILE.key };
+}
+
+export function personaDisplayName(key: string | null | undefined) {
+  return getPersonaProfile(key).displayName;
+}
+
+export function personaDisplayMetadata(key: string | null | undefined) {
+  const profile = getPersonaProfile(key);
+  return {
+    title: profile.displayName,
+    displayName: profile.displayName,
+    speciesName: profile.speciesName ?? null,
+    roleTitle: profile.title,
+    shortSummary: profile.shortSummary,
+    description: profile.description,
+    traits: profile.traits,
+    growthSignals: profile.growthSignals,
+    aiScoreHints: profile.aiScoreHints ?? [],
+    evolutionHint: profile.evolutionHint,
+    toneKeywords: profile.toneKeywords ?? [],
+  };
+}
+
 export function defaultPersonaArchetypes() {
   return DEFAULT_PERSONA_CATALOG.map((entry) => ({
     key: entry.key,
-    title: entry.title,
-    blurb: entry.blurb,
+    title: entry.displayName,
+    displayName: entry.displayName,
+    roleTitle: entry.title,
+    blurb: entry.shortSummary,
+    description: entry.description,
+    traits: entry.traits,
+    growthSignals: entry.growthSignals,
+    aiScoreHints: entry.aiScoreHints ?? [],
+    evolutionHint: entry.evolutionHint,
     image_url: entry.icon,
     theme: entry.theme,
     category: entry.category,

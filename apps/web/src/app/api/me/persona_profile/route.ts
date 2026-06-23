@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { safeJsonError } from "@/lib/apiSecurity";
 import { supabaseServer } from "@/lib/supabase/server";
 import { derivePersonaRowsFromSignals } from "@/lib/personaAssignment";
-import { findDefaultPersona } from "@/lib/personaCatalog";
+import { findDefaultPersona, getPersonaProfile } from "@/lib/personaCatalog";
 import { buildPersonaScoreBreakdowns } from "@/lib/personaScoreBreakdown";
 
 type PersonaRow = {
@@ -104,7 +104,18 @@ export async function GET() {
 
   // 対応するキャラ定義（タイトルなど）
   const keys = finalPersonas.map((r: any) => r.persona_key).filter(Boolean);
-  let defs: { key: string; title: string; theme: string | null }[] = [];
+  let defs: Array<{
+    key: string;
+    title: string;
+    theme: string | null;
+    displayName?: string;
+    roleTitle?: string;
+    shortSummary?: string;
+    traits?: string[];
+    growthSignals?: string[];
+    aiScoreHints?: string[];
+    evolutionHint?: string;
+  }> = [];
 
   if (keys.length > 0) {
     const { data: defRows, error: dErr } = await supa
@@ -118,11 +129,23 @@ export async function GET() {
       defs = defRows as any;
     }
 
-    const known = new Set(defs.map((row) => row.key));
-    keys.forEach((key: string) => {
-      if (known.has(key)) return;
-      const fallback = findDefaultPersona(key);
-      if (fallback) defs.push({ key: fallback.key, title: fallback.title, theme: fallback.theme });
+    const dbDefs = new Map(defs.map((row) => [row.key, row]));
+    defs = keys.map((key: string) => {
+      const dbDefinition = dbDefs.get(key);
+      const catalogDefinition = findDefaultPersona(key);
+      const profile = getPersonaProfile(key);
+      return {
+        key,
+        title: profile.displayName,
+        theme: dbDefinition?.theme ?? catalogDefinition?.theme ?? null,
+        displayName: profile.displayName,
+        roleTitle: profile.title,
+        shortSummary: profile.shortSummary,
+        traits: profile.traits,
+        growthSignals: profile.growthSignals,
+        aiScoreHints: profile.aiScoreHints ?? [],
+        evolutionHint: profile.evolutionHint,
+      };
     });
   }
 

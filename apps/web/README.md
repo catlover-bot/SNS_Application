@@ -2,7 +2,9 @@
 
 Next.js App Router frontend for the Supabase-backed persona SNS.
 
-PersonaLens is not a per-post character assignment app. Each post contributes AI-derived signals, those signals accumulate over time, and the user's persona evolves from their posting history. Timelines can then be personalized by persona compatibility and user feedback.
+PersonaLens is not a per-post character assignment app. Each post contributes AI-derived growth signals, those signals accumulate over time, and the user's dinosaur persona evolves from their posting history. Timelines can then be personalized by persona compatibility and user feedback.
+
+User-facing dinosaur names and Japanese character profiles live in `src/lib/personaCatalog.ts`. Persisted keys, URL slugs, and `analysis.persona.*` remain stable for compatibility; UI code should resolve display metadata by key instead of showing raw keys.
 
 ## Development
 

@@ -6,6 +6,7 @@ import { safeJsonError } from "@/lib/apiSecurity";
 import {
   defaultPersonaArchetypes,
   findDefaultPersona,
+  personaDisplayMetadata,
 } from "@/lib/personaCatalog";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -48,14 +49,16 @@ export async function GET(req: NextRequest) {
 
     if (!data) {
       const fallback = findDefaultPersona(key);
-      if (fallback) return NextResponse.json(fallback);
+      if (fallback) {
+        return NextResponse.json({ ...fallback, ...personaDisplayMetadata(key) });
+      }
       return NextResponse.json(
         { error: "persona not found" },
         { status: 404 }
       );
     }
 
-    return NextResponse.json(data);
+    return NextResponse.json({ ...data, ...personaDisplayMetadata(data.key) });
   }
 
   // --- 一覧（図鑑用）: archetype テーブルをそのまま利用 ---
@@ -84,8 +87,8 @@ export async function GET(req: NextRequest) {
   const mapped =
     rows.map((row) => ({
       key: row.key,
-      title: row.title,
-      blurb: row.blurb,
+      ...personaDisplayMetadata(row.key),
+      blurb: personaDisplayMetadata(row.key).shortSummary,
       icon: row.image_url ?? null,
       theme: row.theme,
       category: row.category,

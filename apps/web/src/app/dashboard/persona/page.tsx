@@ -9,6 +9,7 @@ import PersonaBadge from "@/components/PersonaBadge";
 import AiTimelineSummaryPanel from "@/components/AiTimelineSummaryPanel";
 import PersonaEvolutionChart from "@/components/PersonaEvolutionChart";
 import SignedInDemoGuide from "@/components/SignedInDemoGuide";
+import { getPersonaProfile, personaDisplayName } from "@/lib/personaCatalog";
 
 type Soulmate = {
   user_id: string;
@@ -159,16 +160,12 @@ export default function PersonaDashboardPage() {
     };
   }, []);
 
-  const defsByKey = useMemo(
-    () => new Map((profile?.defs ?? []).map((definition) => [definition.key, definition])),
-    [profile?.defs]
-  );
   const breakdownsByKey = useMemo(
     () => new Map((profile?.breakdowns ?? []).map((breakdown) => [breakdown.personaKey, breakdown])),
     [profile?.breakdowns]
   );
   const mainPersona = profile?.personas?.[0] ?? null;
-  const mainDefinition = mainPersona ? defsByKey.get(mainPersona.persona_key) : null;
+  const mainCharacterProfile = mainPersona ? getPersonaProfile(mainPersona.persona_key) : null;
   const mainBreakdown = mainPersona ? breakdownsByKey.get(mainPersona.persona_key) : null;
   const subPersonas = profile?.personas?.slice(1, 4) ?? [];
 
@@ -292,14 +289,21 @@ export default function PersonaDashboardPage() {
                   <PersonaBadge personaKey={mainPersona.persona_key} />
                   <div className="min-w-0">
                     <div className="text-xl font-bold text-slate-950">
-                      {mainDefinition?.title ?? mainPersona.persona_key}
+                      {mainCharacterProfile?.displayName}
                     </div>
-                    <div className="text-xs text-slate-500">@{mainPersona.persona_key}</div>
+                    <div className="text-xs font-medium text-indigo-700">{mainCharacterProfile?.title}</div>
                   </div>
                 </div>
                 <p className="mt-3 text-sm leading-6 text-slate-700">
-                  最近の投稿から、いまいちばん強く出ているキャラです。新しい投稿や反応によって少しずつ育ちます。
+                  {mainCharacterProfile?.shortSummary}
                 </p>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {(mainCharacterProfile?.traits ?? []).map((trait) => (
+                    <span key={trait} className="rounded-full border border-indigo-100 bg-white px-2 py-0.5 text-xs text-indigo-700">
+                      {trait}
+                    </span>
+                  ))}
+                </div>
                 <div className="mt-4 grid grid-cols-2 gap-2">
                   <div className="rounded-lg border border-indigo-100 bg-white p-3">
                     <div className="text-xs text-slate-500">キャラスコア</div>
@@ -357,6 +361,22 @@ export default function PersonaDashboardPage() {
                     </div>
                   </div>
                 )}
+
+                <div>
+                  <div className="text-xs font-semibold text-slate-700">育ちやすい投稿</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {(mainCharacterProfile?.growthSignals ?? []).map((signal) => (
+                      <span key={signal} className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-800">
+                        {signal}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <div className="text-xs font-semibold text-amber-900">進化ヒント</div>
+                  <p className="mt-1 text-xs leading-5 text-amber-900/80">{mainCharacterProfile?.evolutionHint}</p>
+                </div>
               </div>
             </div>
 
@@ -365,7 +385,7 @@ export default function PersonaDashboardPage() {
                 <h3 className="text-sm font-semibold text-slate-900">あなたのサブキャラ</h3>
                 <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {subPersonas.map((persona) => {
-                    const definition = defsByKey.get(persona.persona_key);
+                    const characterProfile = getPersonaProfile(persona.persona_key);
                     const breakdown = breakdownsByKey.get(persona.persona_key);
                     return (
                       <article key={persona.persona_key} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -373,10 +393,18 @@ export default function PersonaDashboardPage() {
                           <PersonaBadge personaKey={persona.persona_key} />
                           <div className="min-w-0">
                             <div className="truncate text-sm font-semibold text-slate-900">
-                              {definition?.title ?? persona.persona_key}
+                              {characterProfile.displayName}
                             </div>
-                            <div className="text-xs text-slate-500">@{persona.persona_key}</div>
+                            <div className="text-xs text-slate-500">{characterProfile.title}</div>
                           </div>
+                        </div>
+                        <p className="mt-2 text-xs leading-5 text-slate-600">{characterProfile.shortSummary}</p>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {characterProfile.traits.slice(0, 3).map((trait) => (
+                            <span key={trait} className="rounded-full border bg-white px-1.5 py-0.5 text-[11px] text-slate-600">
+                              {trait}
+                            </span>
+                          ))}
                         </div>
                         <div className="mt-3 flex items-end justify-between">
                           <span className="text-xs text-slate-500">キャラスコア</span>
@@ -390,6 +418,7 @@ export default function PersonaDashboardPage() {
                             style={{ width: `${breakdown?.totalScore ?? scorePercent(persona.score)}%` }}
                           />
                         </div>
+                        <p className="mt-2 text-[11px] leading-5 text-slate-500">進化ヒント: {characterProfile.evolutionHint}</p>
                       </article>
                     );
                   })}
@@ -500,7 +529,7 @@ export default function PersonaDashboardPage() {
                     key={x.key}
                     className="text-xs px-2 py-1 rounded-full border bg-white"
                   >
-                    {x.title} {(x.share * 100).toFixed(0)}%
+                    {personaDisplayName(x.key)} {(x.share * 100).toFixed(0)}%
                   </span>
                 ))}
               </div>
@@ -634,7 +663,7 @@ export default function PersonaDashboardPage() {
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
                       <PersonaBadge personaKey={s.persona_key} />
                       <span className="text-gray-600">
-                        {s.persona_title}
+                        {personaDisplayName(s.persona_key)}
                       </span>
                       {s.relation_label && (
                         <span className="px-2 py-0.5 rounded-full bg-pink-100 text-pink-700 text-[11px]">

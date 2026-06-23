@@ -6,6 +6,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import {
   DEFAULT_PERSONA_CATALOG,
   defaultPersonaCompat,
+  personaDisplayName,
 } from "@/lib/personaCatalog";
 import { buildPersonaProfile } from "@sns/core";
 
@@ -304,8 +305,8 @@ export async function GET(req: NextRequest) {
 
     const items = compatRows.map((row) => {
       const def = defMap.get(row.target_key);
-      const title = def?.title ?? row.target_key;
-      const sourceTitle = sourceDef?.title ?? sourceKey;
+      const title = personaDisplayName(row.target_key);
+      const sourceTitle = personaDisplayName(sourceKey);
       const insights = buildCompatInsights({
         mode: modeParam,
         source: sourceDef,

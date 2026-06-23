@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { personaDisplayName } from "@/lib/personaCatalog";
 
 type Mode = "general" | "friendship" | "romance";
 
@@ -51,12 +52,16 @@ export function PersonaCompatTabs({
         }
         const data = await res.json();
         if (!cancelled) {
-          setItems(data.items ?? []);
+          setItems(
+            (data.items ?? []).map((item: CompatItem) => ({
+              ...item,
+              title: personaDisplayName(item.targetKey),
+            }))
+          );
         }
-      } catch (e: any) {
+      } catch {
         if (!cancelled) {
-          console.error(e);
-          setError(e.message ?? "エラーが発生しました");
+          setError("相性情報を読み込めませんでした。時間をおいてもう一度お試しください。");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -108,7 +113,7 @@ export function PersonaCompatTabs({
       )}
       {error && (
         <div className="py-4 text-sm text-red-400">
-          相性情報の取得に失敗しました: {error}
+          {error}
         </div>
       )}
 

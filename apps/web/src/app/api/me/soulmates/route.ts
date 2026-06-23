@@ -1,7 +1,7 @@
 // apps/web/src/app/api/me/soulmates/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { safeJsonError } from "@/lib/apiSecurity";
-import { findDefaultPersona } from "@/lib/personaCatalog";
+import { personaDisplayName } from "@/lib/personaCatalog";
 import { supabaseServer } from "@/lib/supabase/server";
 
 type Row = {
@@ -16,11 +16,6 @@ type ProfileRow = {
   handle: string | null;
   display_name: string | null;
   avatar_url: string | null;
-};
-
-type PersonaDefRow = {
-  key: string;
-  title: string | null;
 };
 
 function clampInt(value: string | null, min: number, max: number, fallback: number) {
@@ -100,34 +95,10 @@ export async function GET(req: NextRequest) {
     ((profileRows ?? []) as ProfileRow[]).map((p) => [p.id, p])
   );
 
-  // ③ キャラ名（日本語タイトル）
-  const personaKeys = Array.from(
-    new Set(rows.map((r) => r.target_persona_key))
-  );
-
-  const {
-    data: defRows,
-    error: defsErr,
-  } = await supabase
-    .from("persona_defs")
-    .select("key, title")
-    .in("key", personaKeys);
-
-  if (defsErr) {
-    console.warn("[soulmates] persona titles unavailable");
-  }
-
-  const personaMap = new Map<string, string | null>(
-    ((defRows ?? []) as PersonaDefRow[]).map((d) => [d.key, d.title])
-  );
-
-  // ④ フロント用の整形
+  // ③ フロント用の整形。表示名は静的カタログを優先し、キーは互換性のため保持する。
   const payload = rows.map((r) => {
     const prof = profileMap.get(r.target_user_id);
-    const personaTitle =
-      personaMap.get(r.target_persona_key) ??
-      findDefaultPersona(r.target_persona_key)?.title ??
-      r.target_persona_key;
+    const personaTitle = personaDisplayName(r.target_persona_key);
 
     return {
       user_id: r.target_user_id,

@@ -26,6 +26,7 @@ import FollowButton from "@/components/FollowButton";
 import Replies from "@/components/Replies";
 import { LABELS, type LabelKey } from "@/lib/labels";
 import { AiPostVerdictBadge } from "@/components/AiPostVerdictBadge";
+import { personaDisplayName } from "@/lib/personaCatalog";
 
 type Post = {
   id: string;
@@ -228,6 +229,7 @@ export default function PostCard({
       p.analysis?.persona?.candidates?.[0]?.key ??
       ""
   ).trim();
+  const postPersonaName = postPersonaKey ? personaDisplayName(postPersonaKey) : null;
 
   // 作者
   const [author, setAuthor] = useState<{
@@ -1137,13 +1139,13 @@ export default function PostCard({
       </div>
 
       {/* 本文 */}
-      {postPersonaKey && (
+      {postPersonaKey && postPersonaName && (
         <div className="text-xs inline-flex">
           <span
             className="px-2 py-0.5 rounded-full border bg-blue-50 border-blue-300"
             title="この投稿から得られたキャラ成長のシグナルです。投稿自体のキャラではありません。"
           >
-            成長シグナル: @{postPersonaKey}
+            成長シグナル: {postPersonaName}系
           </span>
         </div>
       )}
