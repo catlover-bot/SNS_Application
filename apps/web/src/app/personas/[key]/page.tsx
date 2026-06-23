@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import Image from "next/image";
 import { buildPersonaPostingGuide, buildPersonaProfile } from "@sns/core";
 import { getPersonaProfile, personaDisplayName } from "@/lib/personaCatalog";
+import { getPersonaColorClasses, PersonaGameBadges } from "@/components/PersonaGameBadges";
 
 type PersonaDetail = {
   key: string;
@@ -287,6 +288,7 @@ export default function PersonaDetailPage() {
   }, [currentCompat]);
 
   const catalogProfile = useMemo(() => getPersonaProfile(personaKey), [personaKey]);
+  const color = getPersonaColorClasses(personaKey);
   const iconInfo = resolveIcon(persona?.icon, personaKey, catalogProfile.displayName);
   const profile = useMemo(
     () =>
@@ -342,36 +344,41 @@ export default function PersonaDetailPage() {
           href="/personas"
           className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-700"
         >
-          ← キャラ図鑑へ戻る
+          ← 恐竜図鑑へ戻る
         </Link>
       </div>
 
       {personaError && (
         <div className="mb-1 text-xs text-red-600">
-          一部の追加情報を取得できなかったため、キャラ図鑑の情報を表示しています。
+          一部の追加情報を取得できなかったため、恐竜図鑑の情報を表示しています。
         </div>
       )}
 
       {/* キャラヘッダー */}
-      <section className="flex items-center gap-4 rounded-2xl border bg-white/80 px-4 py-4 sm:px-6 sm:py-5">
-        <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border bg-slate-100">
+      <section className={`flex items-center gap-4 rounded-2xl border bg-gradient-to-br px-4 py-4 sm:px-6 sm:py-5 ${color.card}`}>
+        <div className="relative flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/80 bg-white/80 shadow-sm">
           {iconInfo.isImage ? (
             <PersonaIconImage
               src={iconInfo.value}
               alt={catalogProfile.displayName}
-              width={64}
-              height={64}
+              width={80}
+              height={80}
               className="h-full w-full object-cover"
             />
           ) : (
             <span className="text-2xl">{iconInfo.value}</span>
           )}
+          <span className="absolute bottom-1 right-1 rounded-full bg-white/90 px-1.5 py-0.5 text-sm shadow-sm" aria-hidden="true">
+            {catalogProfile.iconEmoji}
+          </span>
         </div>
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="truncate text-lg font-semibold sm:text-xl">
             {loadingPersona ? "読み込み中…" : catalogProfile.displayName}
           </div>
           <div className="text-sm font-medium text-blue-700">{catalogProfile.title}</div>
+          {catalogProfile.speciesName && <div className="text-xs text-slate-500">{catalogProfile.speciesName}</div>}
+          <PersonaGameBadges personaKey={personaKey} />
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center rounded-full border bg-slate-50 px-2 py-0.5 text-[11px] text-slate-700">
               {themeLabel(persona?.theme)}
@@ -422,6 +429,15 @@ export default function PersonaDetailPage() {
         <div className="text-xs font-semibold text-amber-900">進化ヒント</div>
         <p className="mt-1 text-sm leading-6 text-amber-950">{catalogProfile.evolutionHint}</p>
       </section>
+
+      <div className="flex flex-wrap gap-2">
+        <Link href="/compose" className="rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">
+          この恐竜を育てる投稿を書く
+        </Link>
+        <Link href="/personas" className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          恐竜図鑑に戻る
+        </Link>
+      </div>
 
       <section className="rounded-2xl border bg-slate-50 px-4 py-3 sm:px-6 sm:py-4 space-y-2">
         <div className="text-xs font-semibold text-slate-600">性格プロファイル</div>

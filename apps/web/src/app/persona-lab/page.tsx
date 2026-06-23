@@ -349,7 +349,7 @@ export default function PersonaLabPage() {
         <section className="rounded-xl border bg-white p-6 text-sm text-slate-500">相性を計算中…</section>
       ) : !selectedCompat ? (
         <section className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-600">
-          相性データがまだありません。別のキャラを選ぶか、キャラ図鑑から気になるタイプを探してみてください。
+          相性データがまだありません。別のキャラを選ぶか、恐竜図鑑から気になるタイプを探してみてください。
         </section>
       ) : (
         <section className="grid lg:grid-cols-2 gap-4">
@@ -592,7 +592,7 @@ export default function PersonaLabPage() {
           相性を試したいキャラが見つからないときは、図鑑から雰囲気や説明を眺めて選べます。
         </p>
         <a href="/personas" className="mt-3 inline-flex rounded-full border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50">
-          キャラ図鑑へ
+          恐竜図鑑へ
         </a>
       </section>
     </div>

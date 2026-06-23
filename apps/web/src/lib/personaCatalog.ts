@@ -1,3 +1,5 @@
+export type PersonaRarity = "common" | "rare" | "epic" | "legendary";
+
 export type PersonaProfile = {
   key: string;
   displayName: string;
@@ -10,6 +12,14 @@ export type PersonaProfile = {
   aiScoreHints?: string[];
   evolutionHint: string;
   toneKeywords?: string[];
+  rarity: PersonaRarity;
+  element: string;
+  evolutionStage: 1 | 2 | 3;
+  evolutionStageName: string;
+  badgeLabel: string;
+  silhouetteEmoji: string;
+  iconEmoji: string;
+  colorHint: string;
 };
 
 export type PersonaCatalogEntry = PersonaProfile & {
@@ -37,6 +47,14 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
     aiScoreHints: ["ネタ・ジョーク度や軽い盛ってる度が親しみやすさにつながります", "自慢・マウント感が強すぎない投稿と好相性です"],
     evolutionHint: "次は、みんなが答えやすい質問をひとつ添えると、ネオンラプトルがさらに育ちます。",
     toneKeywords: ["明るい", "巻き込む", "テンポ"],
+    rarity: "rare",
+    element: "ネオン",
+    evolutionStage: 2,
+    evolutionStageName: "成長期",
+    badgeLabel: "場づくり",
+    silhouetteEmoji: "🦖",
+    iconEmoji: "🦖✨",
+    colorHint: "neon",
     theme: "social",
     vibe_tags: ["社交", "会話", "盛り上げ"],
     talk_style: "相手を巻き込むテンポの良い話し方",
@@ -57,6 +75,14 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
     aiScoreHints: ["事実っぽさが高く、盛ってる度が控えめな投稿と好相性です", "ネタ度よりも穏やかな理由説明が成長材料になります"],
     evolutionHint: "次は、相手の気持ちを受け止めたうえで自分の経験を一つ添えると、ガードケラトプスが育ちます。",
     toneKeywords: ["穏やか", "受け止める", "信頼"],
+    rarity: "rare",
+    element: "守護",
+    evolutionStage: 2,
+    evolutionStageName: "成長期",
+    badgeLabel: "安心ガード",
+    silhouetteEmoji: "🦕",
+    iconEmoji: "🦕🛡️",
+    colorHint: "ocean",
     theme: "social",
     vibe_tags: ["安心", "傾聴", "信頼"],
     talk_style: "相手の言葉を受け止めてから穏やかに返す",
@@ -77,6 +103,14 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
     aiScoreHints: ["事実っぽさと穏やかな表現のバランスが成長に寄与します", "自慢・マウント感が低い投稿と好相性です"],
     evolutionHint: "次は、異なる意見の共通点を一つ言葉にすると、ハーモニサウルスがさらに育ちます。",
     toneKeywords: ["橋渡し", "共感", "バランス"],
+    rarity: "common",
+    element: "調和",
+    evolutionStage: 1,
+    evolutionStageName: "発見期",
+    badgeLabel: "橋渡し",
+    silhouetteEmoji: "🦕",
+    iconEmoji: "🦕🤝",
+    colorHint: "harmony",
     theme: "social",
     vibe_tags: ["調整", "共感", "協力"],
     talk_style: "意見の違いをほぐしながら共通点を探す",
@@ -97,6 +131,14 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
     aiScoreHints: ["ネタ・ジョーク度を場面に合わせて使う投稿と好相性です", "盛ってる度と事実っぽさのバランスが個性になります"],
     evolutionHint: "次は、その場の空気がどう変わったかまで書くと、ムードドンの感性がさらに育ちます。",
     toneKeywords: ["温度感", "気配り", "表現"],
+    rarity: "common",
+    element: "温度",
+    evolutionStage: 1,
+    evolutionStageName: "発見期",
+    badgeLabel: "空気調律",
+    silhouetteEmoji: "🦕",
+    iconEmoji: "🦕🎨",
+    colorHint: "sunset",
     theme: "social",
     vibe_tags: ["空気", "気遣い", "温度感"],
     talk_style: "場の空気を見て言葉の濃さを調整する",
@@ -117,6 +159,14 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
     aiScoreHints: ["ネタ・ジョーク度と盛ってる度が高めの投稿で育ちやすいです", "事実っぽさを少し残すと笑いが伝わりやすくなります"],
     evolutionHint: "次は、勢いのある一言に具体的な状況を一つ足すと、カオスレックスの笑いがさらに育ちます。",
     toneKeywords: ["笑い", "勢い", "予想外"],
+    rarity: "epic",
+    element: "混沌",
+    evolutionStage: 3,
+    evolutionStageName: "覚醒期",
+    badgeLabel: "笑撃",
+    silhouetteEmoji: "🦖",
+    iconEmoji: "🦖💥",
+    colorHint: "chaos",
     theme: "chaos",
     vibe_tags: ["笑い", "勢い", "ボケ"],
     talk_style: "予想外の一言と軽いユーモアで展開する",
@@ -137,6 +187,14 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
     aiScoreHints: ["軽い盛ってる度やネタ・ジョーク度が発想の勢いになります", "具体的な事実を一つ添えると成長シグナルが強まります"],
     evolutionHint: "次は、思いつきに『まず何を試すか』を添えると、スパークプテラがさらに高く飛びます。",
     toneKeywords: ["ひらめき", "軽快", "挑戦"],
+    rarity: "rare",
+    element: "閃光",
+    evolutionStage: 2,
+    evolutionStageName: "成長期",
+    badgeLabel: "発想着火",
+    silhouetteEmoji: "🦖",
+    iconEmoji: "🦖⚡",
+    colorHint: "spark",
     theme: "chaos",
     vibe_tags: ["発想", "好奇心", "スピード"],
     talk_style: "思いついたアイデアを短くテンポ良く投げる",
@@ -157,6 +215,14 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
     aiScoreHints: ["事実っぽさとネタ・ジョーク度が両立した投稿と好相性です", "断定を少し控えて問いを残すと個性が伸びます"],
     evolutionHint: "次は、疑問に自分なりの仮説を一つ添えると、クエストラプトルの探究力が育ちます。",
     toneKeywords: ["なぜ", "発見", "好奇心"],
+    rarity: "rare",
+    element: "探究",
+    evolutionStage: 2,
+    evolutionStageName: "成長期",
+    badgeLabel: "なぜ発見",
+    silhouetteEmoji: "🦖",
+    iconEmoji: "🦖❓",
+    colorHint: "curiosity",
     theme: "chaos",
     vibe_tags: ["質問", "ユーモア", "探究"],
     talk_style: "「なんで？」を楽しい角度から投げかける",
@@ -177,6 +243,14 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
     aiScoreHints: ["事実っぽさが高く、盛ってる度が低い投稿と好相性です", "自慢よりも根拠や再現手順を示すほど育ちやすくなります"],
     evolutionHint: "次は、なぜその方法を選んだのかまで書くと、ロジックラプトルの思考力がさらに育ちます。",
     toneKeywords: ["根拠", "検証", "改善"],
+    rarity: "epic",
+    element: "論理",
+    evolutionStage: 3,
+    evolutionStageName: "覚醒期",
+    badgeLabel: "検証知性",
+    silhouetteEmoji: "🦖",
+    iconEmoji: "🦖🧠",
+    colorHint: "logic",
     theme: "logic",
     vibe_tags: ["事実", "根拠", "比較"],
     talk_style: "根拠と結論を分けて端的に話す",
@@ -197,6 +271,14 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
     aiScoreHints: ["事実っぽさが高く、盛ってる度が控えめな投稿と好相性です", "自慢よりも判断理由を示すと戦略性が伸びます"],
     evolutionHint: "次は、目標・制約・次の一手をセットで書くと、ルナストラドンの戦略眼が育ちます。",
     toneKeywords: ["計画", "俯瞰", "次の一手"],
+    rarity: "epic",
+    element: "月影",
+    evolutionStage: 3,
+    evolutionStageName: "覚醒期",
+    badgeLabel: "戦略眼",
+    silhouetteEmoji: "🦕",
+    iconEmoji: "🦕🌙",
+    colorHint: "moon",
     theme: "logic",
     vibe_tags: ["戦略", "観察", "計画"],
     talk_style: "状況を整理し、次の一手を静かに提案する",
@@ -217,6 +299,14 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
     aiScoreHints: ["事実っぽさが高く、ネタ度や盛ってる度が控えめな投稿と好相性です", "断定よりも思考の過程を見せると育ちます"],
     evolutionHint: "次は、考えが変わったきっかけを具体的に書くと、ノクタサウルスの洞察が深まります。",
     toneKeywords: ["内省", "静けさ", "洞察"],
+    rarity: "epic",
+    element: "深淵",
+    evolutionStage: 3,
+    evolutionStageName: "覚醒期",
+    badgeLabel: "深夜思索",
+    silhouetteEmoji: "🦕",
+    iconEmoji: "🦕🔭",
+    colorHint: "mist",
     theme: "logic",
     vibe_tags: ["深掘り", "静けさ", "内省"],
     talk_style: "急がず問いを深め、考えの輪郭を整える",
@@ -237,6 +327,14 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
     aiScoreHints: ["事実っぽさが高く、盛ってる度が低い投稿と特に好相性です", "自慢・マウント感を抑えるほど誠実さが伝わります"],
     evolutionHint: "次は、結論の根拠になる具体例を一つ添えると、マコトレックスの言葉がさらに強くなります。",
     toneKeywords: ["率直", "明快", "誠実"],
+    rarity: "legendary",
+    element: "真実",
+    evolutionStage: 3,
+    evolutionStageName: "最終進化",
+    badgeLabel: "真芯",
+    silhouetteEmoji: "🦖",
+    iconEmoji: "🦖🏹",
+    colorHint: "truth",
     theme: "logic",
     vibe_tags: ["本質", "直球", "誠実"],
     talk_style: "論点を絞って、真っすぐに結論を届ける",
@@ -257,6 +355,14 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
     aiScoreHints: ["事実っぽさが高く、穏やかな投稿と好相性です", "大きく盛るより、小さな変化を具体的に書くほど育ちます"],
     evolutionHint: "次は、昨日との違いを一つ書くと、グロウケラトプスの継続力がさらに育ちます。",
     toneKeywords: ["継続", "育成", "丁寧"],
+    rarity: "common",
+    element: "成長",
+    evolutionStage: 1,
+    evolutionStageName: "発見期",
+    badgeLabel: "継続育成",
+    silhouetteEmoji: "🦕",
+    iconEmoji: "🦕🌱",
+    colorHint: "growth",
     theme: "social",
     vibe_tags: ["育成", "丁寧", "継続"],
     talk_style: "小さな変化を見つけて丁寧に言葉を返す",
@@ -276,7 +382,7 @@ const UNKNOWN_PERSONA_PROFILE: PersonaProfile = {
   key: "unknown_persona",
   displayName: "ミライサウルス",
   speciesName: "未発見種",
-  title: "まだ名前のない進化途中の恐竜",
+  title: "進化途中の恐竜",
   shortSummary: "投稿の成長シグナルを集めながら、これから個性が見えてくる恐竜。",
   description: "まだ十分な投稿傾向が集まっていないため、進化の途中にいます。投稿を重ねると、あなたらしい恐竜キャラの輪郭が少しずつ見えてきます。",
   traits: ["進化途中", "可能性", "観察中"],
@@ -284,6 +390,14 @@ const UNKNOWN_PERSONA_PROFILE: PersonaProfile = {
   aiScoreHints: ["AI判定の4つの成分が積み重なると、得意な傾向が見えてきます"],
   evolutionHint: "まずは短い近況をいくつか投稿して、成長シグナルを集めてみましょう。",
   toneKeywords: ["これから", "成長", "発見"],
+  rarity: "common",
+  element: "未知",
+  evolutionStage: 1,
+  evolutionStageName: "たまご期",
+  badgeLabel: "未発見",
+  silhouetteEmoji: "🥚",
+  iconEmoji: "🦕❔",
+  colorHint: "future",
 };
 
 export function getPersonaProfile(key: string | null | undefined): PersonaProfile {
@@ -294,6 +408,21 @@ export function getPersonaProfile(key: string | null | undefined): PersonaProfil
 
 export function personaDisplayName(key: string | null | undefined) {
   return getPersonaProfile(key).displayName;
+}
+
+export const PERSONA_RARITY_LABELS: Record<PersonaRarity, string> = {
+  common: "ノーマル",
+  rare: "レア",
+  epic: "エピック",
+  legendary: "レジェンド",
+};
+
+export function getPersonaRarityLabel(key: string | null | undefined) {
+  return PERSONA_RARITY_LABELS[getPersonaProfile(key).rarity];
+}
+
+export function getPersonaEvolutionStageLabel(key: string | null | undefined) {
+  return getPersonaProfile(key).evolutionStageName;
 }
 
 export function personaDisplayMetadata(key: string | null | undefined) {
@@ -310,6 +439,15 @@ export function personaDisplayMetadata(key: string | null | undefined) {
     aiScoreHints: profile.aiScoreHints ?? [],
     evolutionHint: profile.evolutionHint,
     toneKeywords: profile.toneKeywords ?? [],
+    rarity: profile.rarity,
+    rarityLabel: PERSONA_RARITY_LABELS[profile.rarity],
+    element: profile.element,
+    evolutionStage: profile.evolutionStage,
+    evolutionStageName: profile.evolutionStageName,
+    badgeLabel: profile.badgeLabel,
+    silhouetteEmoji: profile.silhouetteEmoji,
+    iconEmoji: profile.iconEmoji,
+    colorHint: profile.colorHint,
   };
 }
 
@@ -325,6 +463,14 @@ export function defaultPersonaArchetypes() {
     growthSignals: entry.growthSignals,
     aiScoreHints: entry.aiScoreHints ?? [],
     evolutionHint: entry.evolutionHint,
+    rarity: entry.rarity,
+    element: entry.element,
+    evolutionStage: entry.evolutionStage,
+    evolutionStageName: entry.evolutionStageName,
+    badgeLabel: entry.badgeLabel,
+    silhouetteEmoji: entry.silhouetteEmoji,
+    iconEmoji: entry.iconEmoji,
+    colorHint: entry.colorHint,
     image_url: entry.icon,
     theme: entry.theme,
     category: entry.category,

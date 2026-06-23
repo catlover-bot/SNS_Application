@@ -58,7 +58,7 @@ export default async function TrendingPage() {
                 全体人気順
               </span>
             )}
-            <Link href="/personas" className="underline">キャラ図鑑</Link>
+            <Link href="/personas" className="underline">恐竜図鑑</Link>
           </div>
         </div>
       </header>

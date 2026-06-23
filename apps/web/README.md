@@ -6,6 +6,8 @@ PersonaLens is not a per-post character assignment app. Each post contributes AI
 
 User-facing dinosaur names and Japanese character profiles live in `src/lib/personaCatalog.ts`. Persisted keys, URL slugs, and `analysis.persona.*` remain stable for compatibility; UI code should resolve display metadata by key instead of showing raw keys.
 
+The public dinosaur encyclopedia previews all 12 characters. Signed-in users also see schema-free discovery states based on existing `user_personas` rows, with rarity, element, evolution stage, traits, growth signals, and evolution hints—no additional migration required.
+
 ## Development
 
 From the repository root:

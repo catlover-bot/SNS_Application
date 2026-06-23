@@ -158,7 +158,7 @@ export default function Home() {
                 href="/personas"
                 className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50"
               >
-                キャラ図鑑を見る
+                恐竜図鑑を見る
               </a>
               <a
                 href="/trending"

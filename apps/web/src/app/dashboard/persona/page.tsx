@@ -10,6 +10,7 @@ import AiTimelineSummaryPanel from "@/components/AiTimelineSummaryPanel";
 import PersonaEvolutionChart from "@/components/PersonaEvolutionChart";
 import SignedInDemoGuide from "@/components/SignedInDemoGuide";
 import { getPersonaProfile, personaDisplayName } from "@/lib/personaCatalog";
+import { getPersonaColorClasses, PersonaGameBadges } from "@/components/PersonaGameBadges";
 
 type Soulmate = {
   user_id: string;
@@ -166,6 +167,7 @@ export default function PersonaDashboardPage() {
   );
   const mainPersona = profile?.personas?.[0] ?? null;
   const mainCharacterProfile = mainPersona ? getPersonaProfile(mainPersona.persona_key) : null;
+  const mainColor = getPersonaColorClasses(mainPersona?.persona_key);
   const mainBreakdown = mainPersona ? breakdownsByKey.get(mainPersona.persona_key) : null;
   const subPersonas = profile?.personas?.slice(1, 4) ?? [];
 
@@ -258,7 +260,7 @@ export default function PersonaDashboardPage() {
             </p>
           </div>
           <Link href="/personas" className="rounded-full border border-indigo-200 px-3 py-1.5 text-sm text-indigo-700">
-            キャラ図鑑を見る
+            恐竜図鑑を見る
           </Link>
         </div>
 
@@ -283,10 +285,12 @@ export default function PersonaDashboardPage() {
         ) : (
           <>
             <div className="grid gap-4 lg:grid-cols-[0.85fr_1.15fr]">
-              <article className="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-white p-4">
-                <div className="text-xs font-semibold text-indigo-700">あなたのメインキャラ</div>
+              <article className={`rounded-xl border border-indigo-200 bg-gradient-to-br p-4 ${mainColor.card}`}>
+                <div className="text-xs font-semibold text-indigo-700">あなたのメイン恐竜</div>
                 <div className="mt-3 flex items-center gap-3">
-                  <PersonaBadge personaKey={mainPersona.persona_key} />
+                  <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-white/80 text-2xl shadow-sm ${mainColor.soft}`} aria-hidden="true">
+                    {mainCharacterProfile?.iconEmoji}
+                  </div>
                   <div className="min-w-0">
                     <div className="text-xl font-bold text-slate-950">
                       {mainCharacterProfile?.displayName}
@@ -294,6 +298,7 @@ export default function PersonaDashboardPage() {
                     <div className="text-xs font-medium text-indigo-700">{mainCharacterProfile?.title}</div>
                   </div>
                 </div>
+                <PersonaGameBadges personaKey={mainPersona.persona_key} className="mt-3" />
                 <p className="mt-3 text-sm leading-6 text-slate-700">
                   {mainCharacterProfile?.shortSummary}
                 </p>
@@ -374,23 +379,29 @@ export default function PersonaDashboardPage() {
                 </div>
 
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                  <div className="text-xs font-semibold text-amber-900">進化ヒント</div>
+                  <div className="text-xs font-semibold text-amber-900">次に育てるなら</div>
                   <p className="mt-1 text-xs leading-5 text-amber-900/80">{mainCharacterProfile?.evolutionHint}</p>
+                  <Link href="/compose" className="mt-2 inline-flex text-xs font-semibold text-amber-900 underline">
+                    このヒントで投稿を書く
+                  </Link>
                 </div>
               </div>
             </div>
 
             {subPersonas.length > 0 && (
               <div>
-                <h3 className="text-sm font-semibold text-slate-900">あなたのサブキャラ</h3>
+                <h3 className="text-sm font-semibold text-slate-900">あなたのサブ恐竜</h3>
                 <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {subPersonas.map((persona) => {
                     const characterProfile = getPersonaProfile(persona.persona_key);
+                    const color = getPersonaColorClasses(persona.persona_key);
                     const breakdown = breakdownsByKey.get(persona.persona_key);
                     return (
-                      <article key={persona.persona_key} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <article key={persona.persona_key} className={`rounded-xl border border-slate-200 bg-gradient-to-br p-3 ${color.card}`}>
                         <div className="flex items-center gap-2">
-                          <PersonaBadge personaKey={persona.persona_key} />
+                          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/80 text-lg ${color.soft}`} aria-hidden="true">
+                            {characterProfile.iconEmoji}
+                          </div>
                           <div className="min-w-0">
                             <div className="truncate text-sm font-semibold text-slate-900">
                               {characterProfile.displayName}
@@ -398,6 +409,7 @@ export default function PersonaDashboardPage() {
                             <div className="text-xs text-slate-500">{characterProfile.title}</div>
                           </div>
                         </div>
+                        <PersonaGameBadges personaKey={persona.persona_key} className="mt-2" />
                         <p className="mt-2 text-xs leading-5 text-slate-600">{characterProfile.shortSummary}</p>
                         <div className="mt-2 flex flex-wrap gap-1">
                           {characterProfile.traits.slice(0, 3).map((trait) => (
@@ -405,6 +417,12 @@ export default function PersonaDashboardPage() {
                               {trait}
                             </span>
                           ))}
+                        </div>
+                        <div className="mt-2 rounded-lg border border-white/80 bg-white/65 p-2">
+                          <div className="text-[11px] font-semibold text-slate-700">成長シグナル</div>
+                          <p className="mt-0.5 text-[11px] leading-5 text-slate-600">
+                            {characterProfile.growthSignals.slice(0, 2).join("・")}
+                          </p>
                         </div>
                         <div className="mt-3 flex items-end justify-between">
                           <span className="text-xs text-slate-500">キャラスコア</span>
@@ -418,7 +436,7 @@ export default function PersonaDashboardPage() {
                             style={{ width: `${breakdown?.totalScore ?? scorePercent(persona.score)}%` }}
                           />
                         </div>
-                        <p className="mt-2 text-[11px] leading-5 text-slate-500">進化ヒント: {characterProfile.evolutionHint}</p>
+                        <p className="mt-2 text-[11px] leading-5 text-slate-500">次に育てるなら: {characterProfile.evolutionHint}</p>
                       </article>
                     );
                   })}
@@ -428,7 +446,7 @@ export default function PersonaDashboardPage() {
 
             <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
               <Link href="/compose" className="rounded-full bg-indigo-600 px-4 py-2 text-sm text-white">
-                このキャラを育てる投稿を書く
+                この恐竜を育てる投稿を書く
               </Link>
               <Link href="/persona-feed" className="rounded-full border border-indigo-200 bg-white px-4 py-2 text-sm text-indigo-700">
                 キャラTLを見る
@@ -599,7 +617,7 @@ export default function PersonaDashboardPage() {
               相性候補
             </h2>
             <p className="text-xs text-gray-500">
-              あなたのメインキャラと相性の良い相手をピックアップしています。
+              あなたのメイン恐竜と相性の良い相手をピックアップしています。
             </p>
           </div>
         </div>
