@@ -1120,10 +1120,13 @@ export default function PersonaFeedPage() {
           </div>
           <h1 className="mt-1 text-2xl font-bold">キャラ別タイムライン</h1>
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            {hint} 投稿を開く、返信する、興味なしにするほど、相性の良いキャラや話題が見つかりやすくなります。
+            {hint} あなたの投稿キャラを軸に、投稿を開く、返信する、興味なしにするほど、相性の良いキャラや話題が見つかりやすくなります。
           </p>
         </div>
         <div className="flex flex-wrap gap-3 text-sm">
+          <a href="/dashboard/persona" className="underline">
+            キャラスコアを見る
+          </a>
           <a href="/persona-evolution" className="underline">
             キャラ進化を見る
           </a>

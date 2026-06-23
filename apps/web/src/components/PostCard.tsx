@@ -151,9 +151,9 @@ function ScoreBadge({
         background: `hsl(${hue} 70% 95%)`,
         borderColor: `hsl(${hue} 50% 60%)`,
       }}
-      title={`嘘っぽさ ${pct}%`}
+      title={`投稿文の盛り・ネタ感を含むAIクセ ${pct}%`}
     >
-      嘘 {pct}%
+      AIクセ {pct}%
     </span>
   );
 }

@@ -50,17 +50,14 @@ export default function PersonaRadar() {
 
       try {
         const res = await fetch("/api/me/persona_profile", { cache: "no-store" });
-        const text = await res.text();
         if (!res.ok) {
-          throw new Error(text || res.statusText);
+          throw new Error("persona_profile_unavailable");
         }
-        const json: ApiResponse = JSON.parse(text);
+        const json = (await res.json()) as ApiResponse;
 
         if (!alive) return;
         if (json.error) {
-          setErr(json.error);
-          setData([]);
-          return;
+          throw new Error("persona_profile_unavailable");
         }
 
         const defsByKey = new Map<string, PersonaDef>();
@@ -78,10 +75,10 @@ export default function PersonaRadar() {
         });
 
         setData(points);
-      } catch (e: any) {
-        console.error("[PersonaRadar] error:", e?.message ?? e);
+      } catch {
+        console.warn("[PersonaRadar] profile request could not complete");
         if (!alive) return;
-        setErr(e?.message ?? "failed to load persona profile");
+        setErr("キャラ情報を読み込めませんでした。時間をおいてもう一度お試しください。");
         setData([]);
       } finally {
         if (alive) setLoading(false);
@@ -105,7 +102,7 @@ export default function PersonaRadar() {
   if (err) {
     return (
       <div className="rounded border bg-red-50 text-red-700 p-4 text-sm">
-        キャラ情報の読み込みに失敗しました：{err}
+        {err}
       </div>
     );
   }
@@ -113,8 +110,11 @@ export default function PersonaRadar() {
   if (!data.length) {
     return (
       <div className="rounded border bg-yellow-50 text-yellow-800 p-4 text-sm">
-        まだキャラスコアがありません。  
-        いくつか投稿したり、診断機能（今後追加）を受けてみてください。
+        <div className="font-medium">まだキャラスコアがありません</div>
+        <p className="mt-1">まず1件投稿すると、投稿キャラと成長の内訳が表示されます。</p>
+        <a href="/compose" className="mt-3 inline-flex rounded-full bg-yellow-700 px-3 py-1.5 text-white">
+          投稿してキャラを育てる
+        </a>
       </div>
     );
   }

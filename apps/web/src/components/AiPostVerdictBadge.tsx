@@ -175,7 +175,7 @@ function detectTone(score: AiScore | null): {
 
 const fallbackTone = {
   label: "簡易判定",
-  description: "一時的な簡易AI判定です。再分析すると詳しい結果に更新される場合があります。",
+  description: "一時的に軽量ロジックで判定しています。あとで再分析できます。",
   emoji: "🪄",
   colorClass: "bg-slate-50 text-slate-700 border-slate-300",
 };
@@ -391,7 +391,7 @@ export function AiPostVerdictBadge({
     ? "一時的な簡易結果"
     : prettifyVerdict(ai?.verdict ?? "", ai);
   const displayReason = fallback
-    ? "現在は簡易AI判定を表示しています。少し時間をおいて再分析すると、詳しい結果に更新される場合があります。"
+    ? "一時的に軽量ロジックで判定しています。投稿は保存されているので、少し時間をおいて再分析できます。"
     : ai?.reason ?? "";
   const actionDisabled = loading || cooldown;
 
@@ -492,6 +492,11 @@ export function AiPostVerdictBadge({
             {displayReason && (
               <p className="text-[11px] leading-relaxed text-slate-700 whitespace-pre-wrap">
                 {displayReason}
+              </p>
+            )}
+            {!fallback && (
+              <p className="text-[10px] leading-5 text-slate-500">
+                外部の事実確認ではなく、投稿文の言葉遣いと雰囲気から推定しています。
               </p>
             )}
           </div>

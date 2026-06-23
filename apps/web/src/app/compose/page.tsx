@@ -81,6 +81,7 @@ type CompatSuggestion = {
 };
 
 type ComposeFormatMode = "post" | "short" | "story";
+type AutomationStepStatus = "pending" | "done" | "retry";
 
 type PostPerformanceResponse = {
   ok: boolean;
@@ -242,6 +243,10 @@ export default function Compose() {
   const [composeFormatMode, setComposeFormatMode] = useState<ComposeFormatMode>("post");
   const [lastPostedPostId, setLastPostedPostId] = useState<string | null>(null);
   const [lastPostedNotice, setLastPostedNotice] = useState<string | null>(null);
+  const [lastPostedAutomation, setLastPostedAutomation] = useState<{
+    ai: AutomationStepStatus;
+    persona: AutomationStepStatus;
+  } | null>(null);
   const [lastPostedPerformance, setLastPostedPerformance] = useState<PostPerformanceResponse | null>(null);
   const [lastPostedPerformanceLoading, setLastPostedPerformanceLoading] = useState(false);
   const [lastPostedPerformanceError, setLastPostedPerformanceError] = useState<string | null>(null);
@@ -600,6 +605,7 @@ export default function Compose() {
     }
     setPosting(true);
     setFormError(null);
+    setLastPostedAutomation(null);
 
     try {
       // 認証チェック
@@ -702,8 +708,11 @@ export default function Compose() {
         setLastPostedPostId(postId || null);
         setLastPostedNotice(
           postId
-            ? "投稿しました。AI判定とキャラ分析を更新しています…"
+            ? "投稿できました。AI判定とキャラ成長を更新しています…"
             : "投稿しました。分析はあとで再試行できます。"
+        );
+        setLastPostedAutomation(
+          postId ? { ai: "pending", persona: "pending" } : { ai: "retry", persona: "retry" }
         );
         setLastPostedPerformance(null);
         setLastPostedPerformanceError(null);
@@ -711,14 +720,18 @@ export default function Compose() {
           void loadPostPerformance(postId);
           void runPostSubmitAutomation(postId).then(({ aiScoreOk, personaRecomputeOk }) => {
             if (latestPostedPostIdRef.current !== postId) return;
+            setLastPostedAutomation({
+              ai: aiScoreOk ? "done" : "retry",
+              persona: personaRecomputeOk ? "done" : "retry",
+            });
             if (aiScoreOk && personaRecomputeOk) {
-              setLastPostedNotice("投稿しました。AI判定とキャラ分析を更新しました。");
+              setLastPostedNotice("投稿できました。AI判定が完了し、キャラ分析も更新されました。");
             } else if (personaRecomputeOk) {
-              setLastPostedNotice("投稿しました。キャラ分析を更新しました。AI判定はあとで再試行できます。");
+              setLastPostedNotice("投稿できました。キャラ分析を更新しました。AI判定はあとで再試行できます。");
             } else if (aiScoreOk) {
-              setLastPostedNotice("投稿しました。AI判定を更新しました。キャラ分析はあとで再試行できます。");
+              setLastPostedNotice("投稿できました。AI判定が完了しました。キャラ分析はあとで再試行できます。");
             } else {
-              setLastPostedNotice("投稿しました。一部の分析はあとで再試行できます。");
+              setLastPostedNotice("投稿できました。分析はあとで再試行できます。");
             }
           });
         }
@@ -764,10 +777,27 @@ export default function Compose() {
         </div>
         <h1 className="mt-1 text-2xl font-bold">投稿からキャラを育てる</h1>
         <p className="mt-2 text-sm leading-6 text-slate-600">
-          本文を書くと、投稿のキャラ候補、相性の良い副キャラ、返信されやすい導線をその場で確認できます。
-          投稿後は反応が増えるほど、あなた向けのタイムラインとキャラ進化に反映されます。
+          本文を書くと、AI判定と投稿キャラ候補が表示されます。投稿後は履歴と反応がキャラスコアに加わり、
+          あなたらしいキャラとキャラTLが少しずつ育ちます。
         </p>
       </header>
+
+      <section className="rounded-xl border border-blue-100 bg-blue-50 p-3">
+        <div className="text-sm font-semibold text-blue-950">投稿すると起きること</div>
+        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+          {[
+            ["AI判定", "事実っぽさ・盛り・自慢・ネタの4つを見える化"],
+            ["キャラ成長", "投稿の雰囲気がキャラスコアと進化履歴に追加"],
+            ["キャラTLへ反映", "同じキャラや相性の良い投稿と出会いやすくなる"],
+          ].map(([title, body], index) => (
+            <div key={title} className="rounded-lg border border-blue-100 bg-white p-3">
+              <div className="text-xs font-semibold text-blue-700">STEP {index + 1}</div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">{title}</div>
+              <p className="mt-1 text-xs leading-5 text-slate-600">{body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
 
       {!lastPostedPostId && text.trim().length === 0 ? <SignedInDemoGuide compact /> : null}
 
@@ -780,6 +810,18 @@ export default function Compose() {
       {lastPostedNotice && (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
           <div className="font-medium">{lastPostedNotice}</div>
+          {lastPostedAutomation && (
+            <div className="mt-2 flex flex-wrap gap-2 text-xs">
+              {[
+                ["AI判定", lastPostedAutomation.ai],
+                ["キャラ分析", lastPostedAutomation.persona],
+              ].map(([label, status]) => (
+                <span key={label} className="rounded-full border border-emerald-200 bg-white px-2 py-1">
+                  {status === "pending" ? "⏳" : status === "done" ? "✓" : "↻"} {label}: {status === "pending" ? "更新中" : status === "done" ? "完了" : "あとで再試行"}
+                </span>
+              ))}
+            </div>
+          )}
           <div className="mt-2 flex flex-wrap gap-2">
             {lastPostedPostId ? (
               <a
@@ -899,7 +941,7 @@ export default function Compose() {
                     </span>
                   </div>
                   <div className="text-xs opacity-70 mt-1">
-                    嘘っぽさ {lastPostedPerformance.post.lieScorePct}% /{" "}
+                    投稿のクセ {lastPostedPerformance.post.lieScorePct}% /{" "}
                     {lastPostedPerformance.post.persona?.selected
                       ? `投稿キャラ @${lastPostedPerformance.post.persona.selected}`
                       : "キャラ未確定"}
@@ -1014,12 +1056,31 @@ export default function Compose() {
         </div>
       )}
 
-      <textarea
-        className="w-full h-52 rounded-lg border border-slate-200 bg-white p-3 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-        placeholder="いま考えていること、誰かに聞いてみたいこと、残したい気づきを書いてください。（最大280文字）"
-        value={text}
-        onChange={(e) => onChangeText(e.target.value)}
-      />
+      <div className="space-y-2">
+        <div>
+          <label htmlFor="compose-text" className="text-sm font-semibold text-slate-900">
+            投稿の本文
+          </label>
+          <p className="mt-1 text-xs leading-5 text-slate-600">
+            本文を書くと、AI判定と投稿キャラ候補がこの画面に表示されます。外部の事実確認ではなく、言葉のクセと雰囲気を楽しむ分析です。
+          </p>
+        </div>
+        {!text.trim() && !lastPostedPostId && (
+          <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-600">
+            <div className="font-medium text-slate-900">何を書けばいい？</div>
+            <p className="mt-1 text-xs leading-5">
+              今日進んだこと、ちょっと盛って話したいこと、誰かにツッコんでほしい一言。短い近況から始められます。
+            </p>
+          </div>
+        )}
+        <textarea
+          id="compose-text"
+          className="h-52 w-full rounded-lg border border-slate-200 bg-white p-3 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+          placeholder="例: 今日ついに新機能が動いた。たぶん世界が少し良くなった。"
+          value={text}
+          onChange={(e) => onChangeText(e.target.value)}
+        />
+      </div>
       {missionRewriteAttribution && (
         <div className="text-xs rounded border border-amber-200 bg-amber-50 px-3 py-2 flex flex-wrap items-center gap-2">
           <span className="font-medium">ミッションリライト適用中</span>
@@ -1037,12 +1098,12 @@ export default function Compose() {
       )}
       <div className="flex items-center justify-between opacity-70 text-sm">
         <div>残り {LIMIT - text.length} 文字</div>
-        <div>嘘っぽさ {(score * 100).toFixed(1)}%</div>
+        <div>投稿前のAIクセ {(score * 100).toFixed(1)}%</div>
       </div>
       {text.trim().length > 0 && (
         <div className="rounded-lg border bg-slate-50 p-3 space-y-2">
           <div className="flex items-center justify-between text-sm">
-            <div className="font-medium">嘘スコア診断（投稿前チェック）</div>
+            <div className="font-medium">投稿のクセ診断（投稿前チェック）</div>
             <div className="opacity-70">
               {lieAnalysis.level === "high" ? "高め" : lieAnalysis.level === "mid" ? "中" : "低め"}
             </div>

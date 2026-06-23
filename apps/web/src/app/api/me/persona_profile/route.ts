@@ -4,6 +4,25 @@ import { safeJsonError } from "@/lib/apiSecurity";
 import { supabaseServer } from "@/lib/supabase/server";
 import { derivePersonaRowsFromSignals } from "@/lib/personaAssignment";
 import { findDefaultPersona } from "@/lib/personaCatalog";
+import { buildPersonaScoreBreakdowns } from "@/lib/personaScoreBreakdown";
+
+type PersonaRow = {
+  persona_key: string;
+  score: number | null;
+  confidence: number | null;
+};
+
+type PostRow = {
+  id: string;
+  created_at: string;
+  analysis: any;
+};
+
+type PostScoreRow = {
+  post_id: string;
+  persona_key: string;
+  final_score: number | null;
+};
 
 export async function GET() {
   const supa = await supabaseServer();
@@ -34,34 +53,40 @@ export async function GET() {
     return safeJsonError("persona_profile_unavailable", 500);
   }
 
-  let finalPersonas = personas ?? [];
+  let finalPersonas = (personas ?? []) as PersonaRow[];
   let source = "user_personas";
 
+  const postsRes = await supa
+    .from("posts")
+    .select("id,created_at,analysis")
+    .eq("author", user.id)
+    .order("created_at", { ascending: false })
+    .limit(500);
+  if (postsRes.error) {
+    console.warn("[/api/me/persona_profile] recent post signals unavailable");
+  }
+  const posts = (postsRes.data ?? []) as PostRow[];
+  const ids = posts.map((post) => post.id).filter(Boolean);
+  let scoreRows: PostScoreRow[] = [];
+
+  if (ids.length > 0) {
+    const scoreRes = await supa
+      .from("post_scores")
+      .select("post_id,persona_key,final_score")
+      .in("post_id", ids)
+      .limit(30000);
+    if (scoreRes.error) {
+      console.warn("[/api/me/persona_profile] post score signals unavailable");
+    } else {
+      scoreRows = (scoreRes.data ?? []) as PostScoreRow[];
+    }
+  }
+
   if (!finalPersonas.length) {
-    const postsRes = await supa
-      .from("posts")
-      .select("id,created_at,analysis")
-      .eq("author", user.id)
-      .order("created_at", { ascending: false })
-      .limit(500);
-
-    const posts = (postsRes.data ?? []) as Array<{
-      id: string;
-      created_at: string;
-      analysis: any;
-    }>;
-
     if (posts.length > 0) {
-      const ids = posts.map((p) => p.id);
-      const scoreRes = await supa
-        .from("post_scores")
-        .select("post_id,persona_key,final_score")
-        .in("post_id", ids)
-        .limit(30000);
       const derived = derivePersonaRowsFromSignals({
         posts,
-        scoreRows: (scoreRes.data ??
-          []) as Array<{ post_id: string; persona_key: string; final_score: number | null }>,
+        scoreRows,
         limit: 12,
       });
       finalPersonas = derived.map((r) => ({
@@ -74,7 +99,7 @@ export async function GET() {
   }
 
   if (!finalPersonas.length) {
-    return NextResponse.json({ personas: [], defs: [], source: "empty" });
+    return NextResponse.json({ personas: [], defs: [], breakdowns: [], source: "empty" });
   }
 
   // 対応するキャラ定義（タイトルなど）
@@ -101,5 +126,45 @@ export async function GET() {
     });
   }
 
-  return NextResponse.json({ personas: finalPersonas, defs, source });
+  let aiScoreRows: Array<{
+    post_id: string;
+    truth: number | null;
+    exaggeration: number | null;
+    brag: number | null;
+    joke: number | null;
+    tags: string[] | null;
+  }> = [];
+  let reactionRows: Array<{ post_id: string; kind: string }> = [];
+
+  if (ids.length > 0) {
+    const [aiRes, reactionRes] = await Promise.all([
+      supa
+        .from("ai_post_scores")
+        .select("post_id,truth,exaggeration,brag,joke,tags")
+        .in("post_id", ids)
+        .limit(500),
+      supa.from("reactions").select("post_id,kind").in("post_id", ids).limit(20000),
+    ]);
+    if (aiRes.error) {
+      console.warn("[/api/me/persona_profile] AI score signals unavailable");
+    } else {
+      aiScoreRows = (aiRes.data ?? []) as typeof aiScoreRows;
+    }
+    if (reactionRes.error) {
+      console.warn("[/api/me/persona_profile] reaction signals unavailable");
+    } else {
+      reactionRows = (reactionRes.data ?? []) as typeof reactionRows;
+    }
+  }
+
+  const breakdowns = buildPersonaScoreBreakdowns({
+    personas: finalPersonas,
+    defs,
+    posts,
+    scoreRows,
+    aiScoreRows,
+    reactionRows,
+  });
+
+  return NextResponse.json({ personas: finalPersonas, defs, breakdowns, source });
 }

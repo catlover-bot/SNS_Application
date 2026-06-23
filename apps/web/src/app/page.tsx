@@ -144,21 +144,15 @@ export default function Home() {
               投稿するほど、あなたのキャラが育つ。
             </h1>
             <p className="text-sm leading-6 text-slate-600">
-              PersonaLens は、投稿の雰囲気を分析してキャラを可視化し、相性の良い投稿や会話を見つけやすくするSNSです。
-              タイムラインは保存・開封・フォローから少しずつあなた向けに整っていきます。
+              PersonaLens は、投稿文の雰囲気から「事実っぽさ・盛ってる度・自慢・マウント感・ネタ度」をAI判定し、
+              あなたらしい投稿キャラを育てるSNSです。まじめな事実確認ではなく、言葉のクセを遊びながら楽しめます。
             </p>
             <div className="flex flex-wrap gap-2">
               <a
-                href="/login"
+                href="/login?next=%2Fcompose"
                 className="rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
               >
-                ログイン / 新規登録
-              </a>
-              <a
-                href="/compose"
-                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50"
-              >
-                投稿してキャラ診断
+                ログインして投稿する
               </a>
               <a
                 href="/personas"
@@ -166,14 +160,32 @@ export default function Home() {
               >
                 キャラ図鑑を見る
               </a>
+              <a
+                href="/trending"
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50"
+              >
+                トレンドを見る
+              </a>
             </div>
           </div>
           <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
-            <div className="text-sm font-semibold text-blue-950">このSNSでできること</div>
-            <div className="mt-3 space-y-2 text-sm text-blue-900">
-              <p>投稿からキャラ傾向と嘘っぽさをチェック。</p>
-              <p>キャラ相性でタイムラインや返信のきっかけを発見。</p>
-              <p>プロフィールにあなたらしい社会的な個性を蓄積。</p>
+            <div className="text-sm font-semibold text-blue-950">3ステップでキャラが育つ</div>
+            <div className="mt-3 space-y-3 text-sm text-blue-950">
+              {[
+                ["1", "投稿する", "近況や気づきを、いつもの言葉で書くだけ。"],
+                ["2", "AIが投稿のクセを判定", "4つのスコアと理由・タグで雰囲気を見える化。"],
+                ["3", "投稿キャラが育つ", "投稿履歴と反応からキャラスコアが少しずつ変化。"],
+              ].map(([number, title, body]) => (
+                <div key={number} className="flex gap-3 rounded-lg border border-blue-100 bg-white/80 p-3">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 font-bold text-white">
+                    {number}
+                  </span>
+                  <div>
+                    <div className="font-semibold">{title}</div>
+                    <p className="mt-0.5 text-xs leading-5 text-blue-800">{body}</p>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>

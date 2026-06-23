@@ -1,7 +1,7 @@
 // apps/web/src/app/dashboard/persona/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import PersonaRadar from "@/components/PersonaRadar";
 import PromptBar from "@/components/PromptBar";
@@ -51,6 +51,52 @@ type PersonaQuest = {
   target_persona_title: string | null;
 };
 
+type PersonaProfileRow = {
+  persona_key: string;
+  score: number | null;
+  confidence: number | null;
+};
+
+type PersonaProfileDef = {
+  key: string;
+  title: string;
+  theme: string | null;
+};
+
+type PersonaScoreBreakdown = {
+  personaKey: string;
+  totalScore: number;
+  confidence: number;
+  factors: Array<{
+    key: "persona_match" | "ai_style" | "consistency" | "reactions" | "recency";
+    label: string;
+    points: number;
+    description: string;
+  }>;
+  reason: string;
+  recentSignals: string[];
+};
+
+type PersonaProfileResponse = {
+  personas: PersonaProfileRow[];
+  defs: PersonaProfileDef[];
+  breakdowns?: PersonaScoreBreakdown[];
+  source?: string;
+};
+
+function scorePercent(value: number | null | undefined) {
+  const number = Number(value ?? 0);
+  if (!Number.isFinite(number)) return 0;
+  return Math.round(Math.max(0, Math.min(1, number <= 1 ? number : number / 100)) * 100);
+}
+
+function factorMaxPoints(key: PersonaScoreBreakdown["factors"][number]["key"]) {
+  if (key === "persona_match") return 40;
+  if (key === "ai_style") return 22;
+  if (key === "consistency") return 18;
+  return 10;
+}
+
 export default function PersonaDashboardPage() {
   const [soulmates, setSoulmates] = useState<Soulmate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,6 +108,32 @@ export default function PersonaDashboardPage() {
   const [questXp, setQuestXp] = useState(0);
   const [questLoading, setQuestLoading] = useState(true);
   const [questError, setQuestError] = useState<string | null>(null);
+  const [profile, setProfile] = useState<PersonaProfileResponse | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setProfileLoading(true);
+      setProfileError(null);
+      try {
+        const res = await fetch("/api/me/persona_profile", { cache: "no-store" });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json) throw new Error("persona_profile_unavailable");
+        if (alive) setProfile(json as PersonaProfileResponse);
+      } catch {
+        if (!alive) return;
+        setProfile(null);
+        setProfileError("投稿キャラを読み込めませんでした。時間をおいてもう一度お試しください。");
+      } finally {
+        if (alive) setProfileLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -86,6 +158,19 @@ export default function PersonaDashboardPage() {
       alive = false;
     };
   }, []);
+
+  const defsByKey = useMemo(
+    () => new Map((profile?.defs ?? []).map((definition) => [definition.key, definition])),
+    [profile?.defs]
+  );
+  const breakdownsByKey = useMemo(
+    () => new Map((profile?.breakdowns ?? []).map((breakdown) => [breakdown.personaKey, breakdown])),
+    [profile?.breakdowns]
+  );
+  const mainPersona = profile?.personas?.[0] ?? null;
+  const mainDefinition = mainPersona ? defsByKey.get(mainPersona.persona_key) : null;
+  const mainBreakdown = mainPersona ? breakdownsByKey.get(mainPersona.persona_key) : null;
+  const subPersonas = profile?.personas?.slice(1, 4) ?? [];
 
   useEffect(() => {
     let alive = true;
@@ -163,6 +248,169 @@ export default function PersonaDashboardPage() {
       </div>
 
       {!insightLoading && !insight?.dominant_key ? <SignedInDemoGuide compact /> : null}
+
+      <section className="rounded-xl border border-indigo-100 bg-white p-4 shadow-sm space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
+              Your Posting Persona
+            </div>
+            <h2 className="mt-1 text-lg font-bold text-slate-950">あなたの投稿キャラ</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-600">
+              投稿キャラ、AI判定、継続、反応、最近の勢いを合わせて、いま強く出ているキャラを表示します。
+            </p>
+          </div>
+          <Link href="/personas" className="rounded-full border border-indigo-200 px-3 py-1.5 text-sm text-indigo-700">
+            キャラ図鑑を見る
+          </Link>
+        </div>
+
+        {profileLoading ? (
+          <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
+            投稿のクセからキャラを分析中です…
+          </div>
+        ) : profileError ? (
+          <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+            {profileError}
+          </div>
+        ) : !mainPersona ? (
+          <div className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50 p-5">
+            <div className="font-semibold text-slate-950">まだキャラは育っていません</div>
+            <p className="mt-1 text-sm leading-6 text-slate-700">
+              まずは1件投稿して、AIにあなたの投稿のクセを見てもらいましょう。短い近況でも大丈夫です。
+            </p>
+            <Link href="/compose" className="mt-3 inline-flex rounded-full bg-indigo-600 px-4 py-2 text-sm text-white">
+              投稿してキャラを育てる
+            </Link>
+          </div>
+        ) : (
+          <>
+            <div className="grid gap-4 lg:grid-cols-[0.85fr_1.15fr]">
+              <article className="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-white p-4">
+                <div className="text-xs font-semibold text-indigo-700">あなたのメインキャラ</div>
+                <div className="mt-3 flex items-center gap-3">
+                  <PersonaBadge personaKey={mainPersona.persona_key} />
+                  <div className="min-w-0">
+                    <div className="text-xl font-bold text-slate-950">
+                      {mainDefinition?.title ?? mainPersona.persona_key}
+                    </div>
+                    <div className="text-xs text-slate-500">@{mainPersona.persona_key}</div>
+                  </div>
+                </div>
+                <p className="mt-3 text-sm leading-6 text-slate-700">
+                  最近の投稿から、いまいちばん強く出ているキャラです。新しい投稿や反応によって少しずつ育ちます。
+                </p>
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <div className="rounded-lg border border-indigo-100 bg-white p-3">
+                    <div className="text-xs text-slate-500">キャラスコア</div>
+                    <div className="text-3xl font-bold text-indigo-700">
+                      {mainBreakdown?.totalScore ?? scorePercent(mainPersona.score)}
+                      <span className="ml-1 text-sm font-normal">pt</span>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-indigo-100 bg-white p-3">
+                    <div className="text-xs text-slate-500">分析の確からしさ</div>
+                    <div className="text-3xl font-bold text-slate-800">
+                      {mainBreakdown?.confidence ?? scorePercent(mainPersona.confidence)}
+                      <span className="ml-1 text-sm font-normal">%</span>
+                    </div>
+                  </div>
+                </div>
+              </article>
+
+              <div className="rounded-xl border border-slate-200 p-4 space-y-3">
+                <div>
+                  <h3 className="font-semibold text-slate-950">なぜこのキャラ？</h3>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">
+                    {mainBreakdown?.reason ?? "投稿キャラの一致度と、これまで蓄積されたキャラスコアから選ばれています。"}
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  {(mainBreakdown?.factors ?? []).map((factor) => {
+                    const maxPoints = factorMaxPoints(factor.key);
+                    const width = Math.round(Math.max(0, Math.min(1, factor.points / maxPoints)) * 100);
+                    return (
+                      <div key={factor.key}>
+                        <div className="flex items-center justify-between gap-3 text-sm">
+                          <span className="font-medium text-slate-800">{factor.label}</span>
+                          <span className="tabular-nums text-indigo-700">{factor.points}pt</span>
+                        </div>
+                        <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100">
+                          <div className="h-full rounded-full bg-indigo-500" style={{ width: `${width}%` }} />
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">{factor.description}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {(mainBreakdown?.recentSignals?.length ?? 0) > 0 && (
+                  <div>
+                    <div className="text-xs font-semibold text-slate-700">最近の成長シグナル</div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {mainBreakdown!.recentSignals.map((signal) => (
+                        <span key={signal} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700">
+                          {signal}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {subPersonas.length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">サブキャラ</h3>
+                <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {subPersonas.map((persona) => {
+                    const definition = defsByKey.get(persona.persona_key);
+                    const breakdown = breakdownsByKey.get(persona.persona_key);
+                    return (
+                      <article key={persona.persona_key} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <div className="flex items-center gap-2">
+                          <PersonaBadge personaKey={persona.persona_key} />
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold text-slate-900">
+                              {definition?.title ?? persona.persona_key}
+                            </div>
+                            <div className="text-xs text-slate-500">@{persona.persona_key}</div>
+                          </div>
+                        </div>
+                        <div className="mt-3 flex items-end justify-between">
+                          <span className="text-xs text-slate-500">キャラスコア</span>
+                          <span className="text-xl font-bold text-slate-800">
+                            {breakdown?.totalScore ?? scorePercent(persona.score)}pt
+                          </span>
+                        </div>
+                        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white">
+                          <div
+                            className="h-full rounded-full bg-slate-500"
+                            style={{ width: `${breakdown?.totalScore ?? scorePercent(persona.score)}%` }}
+                          />
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
+              <Link href="/compose" className="rounded-full bg-indigo-600 px-4 py-2 text-sm text-white">
+                このキャラを育てる投稿を書く
+              </Link>
+              <Link href="/persona-feed" className="rounded-full border border-indigo-200 bg-white px-4 py-2 text-sm text-indigo-700">
+                キャラTLを見る
+              </Link>
+              <Link href="/" className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700">
+                投稿を開いてAI再分析
+              </Link>
+            </div>
+          </>
+        )}
+      </section>
 
       {/* 上段：レーダー + プロンプトバー + タイムラインAIサマリー */}
       <div className="grid gap-4 md:grid-cols-2">
