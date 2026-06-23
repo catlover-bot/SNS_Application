@@ -58,6 +58,26 @@ const groups = [
         name: "LLM_MODEL_NAME",
         note: "Optional model override for AI summary/dialogue calls.",
       },
+      {
+        name: "LIE_JUDGE_PROVIDER",
+        note: "Set to groq for real AI post scoring; unset uses the dummy provider.",
+      },
+      {
+        name: "GROQ_API_KEY",
+        note: "Server-only Groq key for AI post scoring; never use a NEXT_PUBLIC_ prefix.",
+      },
+      {
+        name: "GROQ_MODEL_NAME",
+        note: "Optional Groq model override for AI post scoring.",
+      },
+      {
+        name: "GROQ_API_BASE_URL",
+        note: "Optional Groq OpenAI-compatible API base URL override.",
+      },
+      {
+        name: "LLM_TIMEOUT_MS",
+        note: "Optional timeout for the Groq AI post scoring request.",
+      },
     ],
   },
   {

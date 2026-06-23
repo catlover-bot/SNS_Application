@@ -183,39 +183,65 @@ function normalizeResult(raw: Partial<AiResult> | null | undefined): AiResult {
  * - ダメなら ```json ... ``` / ``` ... ``` を剥がす
  * - それでもダメなら 「最初の { 〜 最後の }」 を抽出して再チャレンジ
  */
-function parseAiResultFromContent(content: string): AiResult | null {
+function hasCompleteAiResultShape(raw: unknown): raw is AiResult {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
+
+  const candidate = raw as Record<string, unknown>;
+  const dimensions = candidate.dimensions;
+  if (!dimensions || typeof dimensions !== "object" || Array.isArray(dimensions)) {
+    return false;
+  }
+
+  const scores = dimensions as Record<string, unknown>;
+  const hasAllScores = ["truth", "exaggeration", "brag", "joke"].every(
+    (key) => typeof scores[key] === "number" && Number.isFinite(scores[key])
+  );
+
+  return (
+    hasAllScores &&
+    typeof candidate.verdict === "string" &&
+    typeof candidate.reason === "string" &&
+    Array.isArray(candidate.tags) &&
+    candidate.tags.every((tag) => typeof tag === "string")
+  );
+}
+
+function parseAiResultFromContent(
+  content: string,
+  options: { requireCompleteShape?: boolean } = {}
+): AiResult | null {
   const text = content.trim();
 
+  const parseCandidate = (candidate: string): AiResult | null => {
+    try {
+      const parsed: unknown = JSON.parse(candidate);
+      if (options.requireCompleteShape && !hasCompleteAiResultShape(parsed)) {
+        return null;
+      }
+      return normalizeResult(parsed as Partial<AiResult>);
+    } catch {
+      return null;
+    }
+  };
+
   // 1) そのまま JSON としてパース
-  try {
-    const parsed = JSON.parse(text);
-    return normalizeResult(parsed);
-  } catch {
-    // 続行
-  }
+  const direct = parseCandidate(text);
+  if (direct) return direct;
 
   // 2) ```json ... ``` / ``` ... ``` を剥がす
   const fencedMatch = text.match(/```(?:json)?([\s\S]*?)```/i);
   const stripped = fencedMatch ? fencedMatch[1].trim() : text;
 
-  try {
-    const parsed = JSON.parse(stripped);
-    return normalizeResult(parsed);
-  } catch {
-    // 続行
-  }
+  const unfenced = parseCandidate(stripped);
+  if (unfenced) return unfenced;
 
   // 3) 最初の { 〜 最後の } だけ抜き出してトライ
   const first = stripped.indexOf("{");
   const last = stripped.lastIndexOf("}");
   if (first !== -1 && last !== -1 && last > first) {
     const maybeJson = stripped.slice(first, last + 1);
-    try {
-      const parsed = JSON.parse(maybeJson);
-      return normalizeResult(parsed);
-    } catch {
-      // もう諦める
-    }
+    const extracted = parseCandidate(maybeJson);
+    if (extracted) return extracted;
   }
 
   return null;
@@ -245,6 +271,160 @@ const dummyLieJudge: LieJudgeFn = async (input) => {
 
   // dummy も normalizeResult を通すことで、将来の仕様変更に耐えやすく
   return normalizeResult(raw);
+};
+
+// =====================================================
+// Provider: Groq (OpenAI-compatible API)
+// =====================================================
+
+const groqApiBaseUrl =
+  process.env.GROQ_API_BASE_URL ?? "https://api.groq.com/openai/v1";
+const groqModelName =
+  process.env.GROQ_MODEL_NAME ?? "llama-3.1-8b-instant";
+const timeoutMs = Number(process.env.LLM_TIMEOUT_MS ?? 8000);
+
+type GroqFallbackReason =
+  | "missing_api_key"
+  | "timeout"
+  | "network_error"
+  | "http_error"
+  | "invalid_response";
+
+function buildGroqPrompt(input: LieJudgeInput): string {
+  const textForPrompt =
+    (input.text ?? "").trim().length > 0 ? input.text : "(本文なし)";
+
+  return `
+あなたはSNS投稿の「本当っぽさ・誇張・自慢・ネタ度」を評価するAIです。
+
+投稿本文だけを読み、外部検索や事実確認を行ったとは主張せず、文章の内容・表現・トーンから推定してください。
+相手を傷つける断定、誹謗中傷、差別的または名誉を傷つける表現は避け、遊び心は保ちつつ敵対的にならないでください。
+
+次の4項目を0〜100の整数で評価してください。
+- truth: 事実らしさ、現実味。本当っぽいほど高い
+- exaggeration: 盛っている感じ、誇張の強さ
+- brag: 自慢、マウント、自己アピールの強さ
+- joke: ネタ、冗談、皮肉、ミーム感の強さ
+
+verdict、reason、tagsは自然な日本語にしてください。
+必ず次のスキーマに一致するJSONオブジェクトだけを返し、Markdownや説明文を付けないでください。
+
+{
+  "dimensions": {
+    "truth": 70,
+    "exaggeration": 40,
+    "brag": 20,
+    "joke": 10
+  },
+  "verdict": "投稿全体の印象を短い日本語で総評",
+  "reason": "本文の言葉遣いとトーンに基づく日本語の説明",
+  "tags": ["短い日本語タグ", "短い日本語タグ"]
+}
+
+投稿本文:
+${JSON.stringify(textForPrompt)}
+`.trim();
+}
+
+function shouldRetryGroqWithoutResponseFormat(status: number, body: string) {
+  if (status !== 400 && status !== 422) return false;
+  return /response[_ -]?format|json_object/i.test(body);
+}
+
+async function groqFallback(
+  input: LieJudgeInput,
+  reason: GroqFallbackReason,
+  status?: number
+) {
+  console.warn("[groqLieJudge] falling back to dummy", {
+    reason,
+    ...(typeof status === "number" ? { status } : {}),
+    model: groqModelName,
+  });
+  return dummyLieJudge(input);
+}
+
+const groqLieJudge: LieJudgeFn = async (input) => {
+  const apiKey = process.env.GROQ_API_KEY?.trim();
+  if (!apiKey) {
+    return groqFallback(input, "missing_api_key");
+  }
+
+  const prompt = buildGroqPrompt(input);
+  const controller = new AbortController();
+  const safeTimeoutMs =
+    Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 8000;
+  const timer = setTimeout(() => controller.abort(), safeTimeoutMs);
+  const url = `${groqApiBaseUrl.replace(/\/+$/, "")}/chat/completions`;
+
+  const request = (includeResponseFormat: boolean) =>
+    fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: groqModelName,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a strict JSON-only evaluator. Return exactly one valid JSON object and no markdown.",
+          },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.2,
+        max_tokens: 600,
+        ...(includeResponseFormat
+          ? { response_format: { type: "json_object" } }
+          : {}),
+      }),
+      signal: controller.signal,
+    });
+
+  try {
+    let res = await request(true);
+
+    if (!res.ok) {
+      const errorBody = await res.text().catch(() => "");
+      if (shouldRetryGroqWithoutResponseFormat(res.status, errorBody)) {
+        console.warn("[groqLieJudge] retrying without response_format", {
+          status: res.status,
+          model: groqModelName,
+        });
+        res = await request(false);
+      } else {
+        return groqFallback(input, "http_error", res.status);
+      }
+    }
+
+    if (!res.ok) {
+      return groqFallback(input, "http_error", res.status);
+    }
+
+    const json: any = await res.json().catch(() => null);
+    const content = json?.choices?.[0]?.message?.content;
+    if (typeof content !== "string") {
+      return groqFallback(input, "invalid_response");
+    }
+
+    const parsed = parseAiResultFromContent(content, {
+      requireCompleteShape: true,
+    });
+    if (!parsed) {
+      return groqFallback(input, "invalid_response");
+    }
+
+    return parsed;
+  } catch {
+    return groqFallback(
+      input,
+      controller.signal.aborted ? "timeout" : "network_error"
+    );
+  } finally {
+    clearTimeout(timer);
+  }
 };
 
 // =====================================================
@@ -370,13 +550,17 @@ ${textForPrompt}
 
 /**
  * LIE_JUDGE_PROVIDER によって使用する実装を切り替える。
+ * - "groq": 本番向け（Groq OpenAI-compatible API）
  * - "ollama": ローカル開発用（Ollama に直叩き）
  * - "dummy" or 未設定: ダミー（Vercel 本番など）
  */
 export function getLieJudge(): LieJudgeFn {
-  const provider = process.env.LIE_JUDGE_PROVIDER ?? "dummy";
+  const provider = (process.env.LIE_JUDGE_PROVIDER ?? "dummy").toLowerCase();
 
-  console.log("[AI] LIE_JUDGE_PROVIDER =", provider);
+  if (provider === "groq") {
+    console.log("[AI] use Groq judge", { model: groqModelName });
+    return groqLieJudge;
+  }
 
   if (provider === "ollama") {
     console.log("[AI] use Ollama judge", {
@@ -386,6 +570,9 @@ export function getLieJudge(): LieJudgeFn {
     return ollamaLieJudge;
   }
 
+  if (provider !== "dummy") {
+    console.warn("[AI] unknown lie judge provider; using dummy");
+  }
   console.log("[AI] use dummy judge");
   return dummyLieJudge;
 }

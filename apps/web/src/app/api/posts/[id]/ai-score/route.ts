@@ -75,7 +75,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
   // ✅ posts.body は存在しないので text だけを見る
   const text = (post.text as string | null | undefined) ?? "";
 
-  // 環境変数で dummy / ollama を切り替える
+  // 環境変数で dummy / groq / ollama を切り替える
   const lieJudge = getLieJudge();
 
   let aiResult;

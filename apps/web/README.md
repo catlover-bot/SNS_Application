@@ -65,6 +65,22 @@ NEXT_PUBLIC_BASE_URL
 
 Optional server-side AI settings can also be provided locally when testing AI-assisted features. Use `pnpm check:web-env` to see the full required/recommended/optional list without printing any values.
 
+### AI post scoring with Groq
+
+AI post scoring uses the deterministic dummy provider unless `LIE_JUDGE_PROVIDER` is explicitly configured. To use Groq's OpenAI-compatible API, set these server-side variables locally or in the Vercel project environment:
+
+```powershell
+LIE_JUDGE_PROVIDER=groq
+GROQ_API_KEY=<secret>
+GROQ_MODEL_NAME=llama-3.1-8b-instant
+GROQ_API_BASE_URL=https://api.groq.com/openai/v1
+LLM_TIMEOUT_MS=8000
+```
+
+`GROQ_API_KEY` is a server-only secret: never commit it and never rename it with a `NEXT_PUBLIC_` prefix. Groq free-tier and rate limits may apply. Provider failures, timeouts, invalid responses, and missing keys fall back to the labeled dummy result so posting still succeeds.
+
+For local experiments, the existing Ollama provider remains available with `LIE_JUDGE_PROVIDER=ollama`, plus the optional `OLLAMA_BASE_URL` and `OLLAMA_MODEL_NAME` overrides.
+
 ## Web-only Scope
 
 For Web development on Windows, use the commands above from the repository root. App Store, iOS, EAS, and `apps/mobile` commands are not required for Web-only work.
