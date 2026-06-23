@@ -13,6 +13,9 @@ export type AiResult = {
   verdict: string;
   reason: string;
   tags: string[];
+  confidence?: number;
+  provider?: string;
+  fallback?: boolean;
 };
 
 // LLM に渡す入力
@@ -63,36 +66,36 @@ function autoVerdict(dim: AiDimensions): string {
 
   // ネタ優先
   if (joke >= 80 && truth <= 60) {
-    return "完全にネタ投稿。ツッコミ待ち感マシマシです。";
+    return "ツッコミ待ちのネタ投稿";
   }
   if (joke >= 60 && exaggeration >= 60) {
-    return "だいぶ盛られたネタ投稿で、ノリ重視の内容です。";
+    return "盛りとユーモアが効いた投稿";
   }
 
   // 大嘘系
   if (truth <= 20 && exaggeration >= 80) {
-    return "ほぼフィクション級の大盛り投稿です。信じちゃダメなやつ。";
+    return "かなり大胆に盛った表現";
   }
 
   // 自慢系
   if (brag >= 70 && truth >= 50) {
-    return "事実ベースの自慢投稿。かなり自己アピール強めです。";
+    return "自信が伝わる自己アピール投稿";
   }
   if (brag >= 60 && exaggeration >= 50) {
-    return "盛り＋マウントがほどよく混ざったイキり投稿です。";
+    return "勢いのある自己アピール投稿";
   }
 
   // かなり本当
   if (truth >= 80 && exaggeration <= 40 && joke <= 40) {
-    return "かなり本当寄り。だいぶ現実的な投稿です。";
+    return "具体性のある本音寄り投稿";
   }
 
   // ほどよいカオス
   if (truth >= 40 && exaggeration >= 40 && joke >= 40) {
-    return "事実・盛り・ネタがいい感じに混ざったカオス系投稿です。";
+    return "本音と遊び心が混ざる投稿";
   }
 
-  return "そこそこ本当だけど、ちょい盛り＆ネタ感もあるバランス型投稿です。";
+  return "自然体に少し遊び心を加えた投稿";
 }
 
 // スコアから理由を自動生成
@@ -139,6 +142,88 @@ function autoReason(dim: AiDimensions): string {
   return parts.join(" ");
 }
 
+function normalizeReason(reason: string, dim: AiDimensions): string {
+  const source = isTemplateLike(reason) ? autoReason(dim) : reason;
+  const compact = source.replace(/\s+/g, " ").trim();
+  const rawSentences = compact.match(/[^。！？!?]+[。！？!?]?/g) ?? [];
+  const sentences = rawSentences
+    .map((sentence) => sentence.trim().replace(/[。！？!?]+$/g, ""))
+    .filter(Boolean)
+    .slice(0, 3)
+    .map((sentence) => `${sentence}。`);
+
+  if (sentences.length === 0) {
+    return autoReason(dim);
+  }
+
+  if (sentences.length === 1) {
+    const truth = clampScore(dim.truth, 50);
+    const exaggeration = clampScore(dim.exaggeration, 50);
+    sentences.push(
+      `言葉の具体性とSNSらしい表現の強さから、事実らしさ${truth}%・誇張${exaggeration}%のバランスとして見ています。`
+    );
+  }
+
+  return sentences.join("");
+}
+
+const INTERNAL_FALLBACK_TAGS = new Set(["beta", "dummy", "fallback", "parse_error"]);
+
+function scoreBasedTags(dim: AiDimensions): string[] {
+  const truth = clampScore(dim.truth, 50);
+  const exaggeration = clampScore(dim.exaggeration, 50);
+  const brag = clampScore(dim.brag, 0);
+  const joke = clampScore(dim.joke, 0);
+
+  return [
+    truth >= 70 ? "現実味あり" : truth <= 35 ? "大胆な主張" : "本音と盛り",
+    exaggeration >= 60 ? "盛り気味" : "等身大",
+    brag >= 60 ? "自己アピール" : "自然体",
+    joke >= 60 ? "ユーモア" : "まじめ寄り",
+  ];
+}
+
+function normalizeTags(rawTags: unknown, dim: AiDimensions): string[] {
+  const tags: string[] = [];
+  const seen = new Set<string>();
+
+  const add = (raw: unknown) => {
+    const tag = String(raw ?? "")
+      .trim()
+      .replace(/^#+/, "")
+      .replace(/\s+/g, " ")
+      .slice(0, 16);
+    const key = tag.toLowerCase();
+    if (
+      !tag ||
+      seen.has(key) ||
+      /^一言タグ\d*$/i.test(tag) ||
+      tag === "タグ1" ||
+      tag === "タグ2"
+    ) {
+      return;
+    }
+    seen.add(key);
+    tags.push(tag);
+  };
+
+  if (Array.isArray(rawTags)) {
+    rawTags.forEach(add);
+  }
+
+  let usefulCount = tags.filter(
+    (tag) => !INTERNAL_FALLBACK_TAGS.has(tag.toLowerCase())
+  ).length;
+  for (const fallbackTag of scoreBasedTags(dim)) {
+    if (usefulCount >= 3 || tags.length >= 5) break;
+    const before = tags.length;
+    add(fallbackTag);
+    if (tags.length > before) usefulCount += 1;
+  }
+
+  return tags.slice(0, 5);
+}
+
 // LLM から返ってきた生データを正規化＋総評/理由を補完
 function normalizeResult(raw: Partial<AiResult> | null | undefined): AiResult {
   const dims = raw?.dimensions ?? {};
@@ -149,8 +234,8 @@ function normalizeResult(raw: Partial<AiResult> | null | undefined): AiResult {
     joke: clampScore(dims.joke, 0),
   };
 
-  let verdict = raw?.verdict ?? "";
-  let reason = raw?.reason ?? "";
+  let verdict = typeof raw?.verdict === "string" ? raw.verdict : "";
+  const rawReason = typeof raw?.reason === "string" ? raw.reason : "";
 
   // verdict が JSON 文字列になっちゃってるパターンも潰す
   const vTrim = verdict.trim();
@@ -161,19 +246,26 @@ function normalizeResult(raw: Partial<AiResult> | null | undefined): AiResult {
     verdict = autoVerdict(normalizedDims);
   }
 
-  if (isTemplateLike(reason)) {
-    reason = autoReason(normalizedDims);
-  }
+  verdict = verdict.trim();
+  if (verdict.length > 48) verdict = autoVerdict(normalizedDims);
 
-  const tags = Array.isArray(raw?.tags)
-    ? raw!.tags!.map((t) => String(t))
-    : [];
+  const reason = normalizeReason(rawReason, normalizedDims);
+  const tags = normalizeTags(raw?.tags, normalizedDims);
+  const confidence =
+    raw?.confidence == null ? undefined : clampScore(raw.confidence, 50);
+  const provider =
+    typeof raw?.provider === "string"
+      ? raw.provider.trim().slice(0, 32) || undefined
+      : undefined;
 
   return {
     dimensions: normalizedDims,
     verdict,
     reason,
     tags,
+    ...(confidence == null ? {} : { confidence }),
+    ...(provider ? { provider } : {}),
+    ...(typeof raw?.fallback === "boolean" ? { fallback: raw.fallback } : {}),
   };
 }
 
@@ -266,7 +358,9 @@ const dummyLieJudge: LieJudgeFn = async (input) => {
     verdict: "ベータ版：ダミー判定中",
     reason:
       "本番環境では、コスト保護のため簡易ロジックでスコアを生成しています。ローカル環境では LLM による詳細判定が行われます。",
-    tags: ["beta", "dummy"],
+    tags: ["fallback", "dummy"],
+    provider: "dummy",
+    fallback: true,
   };
 
   // dummy も normalizeResult を通すことで、将来の仕様変更に耐えやすく
@@ -307,6 +401,10 @@ function buildGroqPrompt(input: LieJudgeInput): string {
 - joke: ネタ、冗談、皮肉、ミーム感の強さ
 
 verdict、reason、tagsは自然な日本語にしてください。
+- verdict: SNSの商品画面になじむ、短く自然な日本語フレーズにする。堅すぎず、幼すぎず、攻撃的にしない
+- reason: 必ず2〜3文にする。本文の言葉遣い、トーン、具体性、SNS上のニュアンスを根拠として説明する
+- reason: 外部検索や事実確認をしたとは書かず、本文から読み取れる範囲だと分かる表現にする
+- tags: UIで使いやすい短い日本語タグを、重複なしで3〜5個にする
 必ず次のスキーマに一致するJSONオブジェクトだけを返し、Markdownや説明文を付けないでください。
 
 {
@@ -316,9 +414,9 @@ verdict、reason、tagsは自然な日本語にしてください。
     "brag": 20,
     "joke": 10
   },
-  "verdict": "投稿全体の印象を短い日本語で総評",
-  "reason": "本文の言葉遣いとトーンに基づく日本語の説明",
-  "tags": ["短い日本語タグ", "短い日本語タグ"]
+  "verdict": "具体性のある前向きな進捗投稿",
+  "reason": "作業内容が具体的に書かれており、現実的な進捗報告として読めます。一方で前向きな言い切りには少し勢いがあり、控えめな自己アピールも感じられます。",
+  "tags": ["進捗報告", "具体的", "前向き", "開発メモ"]
 }
 
 投稿本文:
@@ -416,7 +514,11 @@ const groqLieJudge: LieJudgeFn = async (input) => {
       return groqFallback(input, "invalid_response");
     }
 
-    return parsed;
+    return {
+      ...parsed,
+      provider: "groq",
+      fallback: false,
+    };
   } catch {
     return groqFallback(
       input,
@@ -495,32 +597,24 @@ ${textForPrompt}
   });
 
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    console.error("[ollamaLieJudge] HTTP error", res.status, text);
-    throw new Error(
-      `Ollama error: HTTP ${res.status} ${text || res.statusText}`
-    );
+    console.error("[ollamaLieJudge] HTTP error", {
+      status: res.status,
+      model: ollamaModelName,
+    });
+    throw new Error(`Ollama error: HTTP ${res.status}`);
   }
 
-  const json = await res.json().catch((e) => {
-    console.error("[ollamaLieJudge] failed to parse JSON from Ollama:", e);
+  const json = await res.json().catch(() => {
+    console.error("[ollamaLieJudge] failed to parse response JSON", {
+      model: ollamaModelName,
+    });
     return null as any;
   });
-
-  console.log(
-    "[ollamaLieJudge] raw response (truncated)",
-    JSON.stringify(json).slice(0, 500)
-  );
 
   const content: string =
     json?.message?.content ??
     json?.choices?.[0]?.message?.content ??
     "";
-
-  console.log(
-    "[ollamaLieJudge] content (truncated)",
-    typeof content === "string" ? content.slice(0, 500) : content
-  );
 
   const parsed = parseAiResultFromContent(content);
 
@@ -528,7 +622,7 @@ ${textForPrompt}
     console.warn(
       "[ollamaLieJudge] failed to parse AI result, fallback to parse_error"
     );
-    return {
+    return normalizeResult({
       dimensions: {
         truth: 50,
         exaggeration: 50,
@@ -537,11 +631,17 @@ ${textForPrompt}
       },
       verdict: "判定に失敗しました",
       reason: "LLM 応答の JSON 解析に失敗しました。",
-      tags: ["parse_error"],
-    };
+      tags: ["fallback", "parse_error"],
+      provider: "ollama",
+      fallback: true,
+    });
   }
 
-  return parsed;
+  return {
+    ...parsed,
+    provider: "ollama",
+    fallback: false,
+  };
 };
 
 // =====================================================

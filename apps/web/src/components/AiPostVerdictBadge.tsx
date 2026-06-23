@@ -1,7 +1,7 @@
 // apps/web/src/components/AiPostVerdictBadge.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export type AiScore = {
   post_id: string;
@@ -21,6 +21,9 @@ type Props = {
   /** 嘘っぽさ％が変わったら親（PostCard）に通知する */
   onLiePercentChange?: (pct: number | null) => void;
 };
+
+const REANALYZE_COOLDOWN_MS = 4_000;
+const FALLBACK_TAG_KEYS = new Set(["dummy", "fallback", "beta", "parse_error"]);
 
 // --------------------------------------------------
 // 共通ユーティリティ
@@ -60,6 +63,19 @@ function toAiScore(row: any): AiScore {
     reason: row.reason ?? "",
     tags: Array.isArray(row.tags) ? row.tags : [],
   };
+}
+
+function isFallbackAiScore(score: AiScore | null): boolean {
+  if (!score) return false;
+  const hasFallbackTag = (score.tags ?? []).some((tag) =>
+    FALLBACK_TAG_KEYS.has(String(tag).trim().toLowerCase())
+  );
+  const verdict = String(score.verdict ?? "").trim();
+  return (
+    hasFallbackTag ||
+    verdict.includes("ダミー判定") ||
+    verdict.includes("簡易判定")
+  );
 }
 
 function computeLiePercent(score: AiScore | null): number | null {
@@ -157,6 +173,13 @@ function detectTone(score: AiScore | null): {
   };
 }
 
+const fallbackTone = {
+  label: "簡易判定",
+  description: "一時的な簡易AI判定です。再分析すると詳しい結果に更新される場合があります。",
+  emoji: "🪄",
+  colorClass: "bg-slate-50 text-slate-700 border-slate-300",
+};
+
 // Verdict が JSON ぽくなってしまった場合の保険
 function prettifyVerdict(raw: string, score: AiScore | null): string {
   const trimmed = (raw ?? "").trim();
@@ -184,10 +207,11 @@ function prettifyVerdict(raw: string, score: AiScore | null): string {
  * 投稿ごとの「AI 一言タグ」を決める。
  * - LLM が返した tags からプレースホルダ（"一言タグ1" 等）は除外
  * - なにも無ければスコアからそれっぽいタグを自動生成
- * - 最大 4 個まで
+ * - 最大 5 個まで
  */
 function buildDisplayTags(score: AiScore | null): string[] {
   if (!score) return [];
+  const fallback = isFallbackAiScore(score);
 
   const truth = clamp01to100(score.truth, 50);
   const exaggeration = clamp01to100(score.exaggeration, 50);
@@ -197,13 +221,18 @@ function buildDisplayTags(score: AiScore | null): string[] {
   const rawTags = (score.tags ?? [])
     .map((t) => `${t}`.trim())
     .filter(
-      (t) => t && !/^一言タグ\d*$/i.test(t) && t !== "タグ1" && t !== "タグ2"
+      (t) =>
+        t &&
+        !FALLBACK_TAG_KEYS.has(t.toLowerCase()) &&
+        !/^一言タグ\d*$/i.test(t) &&
+        t !== "タグ1" &&
+        t !== "タグ2"
     );
 
   const tags: string[] = [];
 
   // トーンラベルを必ず 1 個入れる
-  const tone = detectTone(score);
+  const tone = fallback ? fallbackTone : detectTone(score);
   if (tone.label) {
     tags.push(tone.label);
   }
@@ -230,8 +259,8 @@ function buildDisplayTags(score: AiScore | null): string[] {
       tags.push("大喜利モード");
   }
 
-  // 重複除去して 4 個まで
-  return Array.from(new Set(tags)).slice(0, 4);
+  // 重複除去して 5 個まで
+  return Array.from(new Set(tags)).slice(0, 5);
 }
 
 // --------------------------------------------------
@@ -240,13 +269,29 @@ function buildDisplayTags(score: AiScore | null): string[] {
 
 export function AiPostVerdictBadge({
   postId,
-  text,
   onLiePercentChange,
 }: Props) {
   const [ai, setAi] = useState<AiScore | null>(null);
   const [loading, setLoading] = useState(false);
+  const [cooldown, setCooldown] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const requestBlockedRef = useRef(false);
+  const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+      requestBlockedRef.current = false;
+      if (cooldownTimerRef.current) {
+        clearTimeout(cooldownTimerRef.current);
+        cooldownTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // 初回：既存スコアを取得（GET /api/posts/[id]/ai-score）
   useEffect(() => {
@@ -295,53 +340,60 @@ export function AiPostVerdictBadge({
 
   // 再分析（POST /api/posts/[id]/ai-score）
   async function handleCalc() {
-    if (loading) return;
+    if (requestBlockedRef.current || cooldown) return;
+    requestBlockedRef.current = true;
     setLoading(true);
     setError(null);
 
     try {
       const res = await fetch(`/api/posts/${postId}/ai-score`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        // サーバ側で text を使う場合に備えて送っておく
-        body: JSON.stringify({ text }),
       });
 
       if (!res.ok) {
-        let msg = `HTTP ${res.status}`;
-        try {
-          const json = await res.json();
-          if (json?.message || json?.error) {
-            msg = json.message || json.error;
-          }
-        } catch {
-          // ignore
-        }
-        throw new Error(msg);
+        console.warn("[AiPostVerdictBadge] POST failed", {
+          status: res.status,
+        });
+        throw new Error("request_failed");
       }
 
       const json = await res.json();
       const score = toAiScore(json);
 
+      if (!mountedRef.current) return;
       setAi(score);
       const lie = computeLiePercent(score);
       onLiePercentChange?.(lie);
       setOpen(true);
-    } catch (e: any) {
-      console.error("[AiPostVerdictBadge] POST error", e);
-      setError(
-        e?.message ||
-          "AI 判定の取得中にエラーが発生しました。"
-      );
+    } catch {
+      console.warn("[AiPostVerdictBadge] POST request could not complete");
+      if (mountedRef.current) {
+        setError("AI 判定を更新できませんでした。少し時間をおいて再度お試しください。");
+      }
     } finally {
+      if (!mountedRef.current) {
+        requestBlockedRef.current = false;
+        return;
+      }
       setLoading(false);
+      setCooldown(true);
+      cooldownTimerRef.current = setTimeout(() => {
+        requestBlockedRef.current = false;
+        setCooldown(false);
+        cooldownTimerRef.current = null;
+      }, REANALYZE_COOLDOWN_MS);
     }
   }
 
-  const tone = detectTone(ai);
-  const verdictLabel = prettifyVerdict(ai?.verdict ?? "", ai);
+  const fallback = isFallbackAiScore(ai);
+  const tone = fallback ? fallbackTone : detectTone(ai);
+  const verdictLabel = fallback
+    ? "一時的な簡易結果"
+    : prettifyVerdict(ai?.verdict ?? "", ai);
+  const displayReason = fallback
+    ? "現在は簡易AI判定を表示しています。少し時間をおいて再分析すると、詳しい結果に更新される場合があります。"
+    : ai?.reason ?? "";
+  const actionDisabled = loading || cooldown;
 
   const truth = clamp01to100(ai?.truth, 50);
   const exaggeration = clamp01to100(ai?.exaggeration, 50);
@@ -364,7 +416,7 @@ export function AiPostVerdictBadge({
           title={tone.description}
         >
           <span>{tone.emoji}</span>
-          <span>AI 判定</span>
+          <span>{fallback ? "AI 簡易判定" : "AI 判定"}</span>
           {ai ? (
             <>
               <span className="px-1 py-0.5 rounded-full bg-white/70 text-[10px]">
@@ -396,9 +448,13 @@ export function AiPostVerdictBadge({
               type="button"
               className="rounded border px-2 py-1 text-[11px] bg-blue-50 hover:bg-blue-100 disabled:opacity-60"
               onClick={handleCalc}
-              disabled={loading}
+              disabled={actionDisabled}
             >
-              {loading ? "再分析中…" : "再分析する"}
+              {loading
+                ? "再分析中…"
+                : cooldown
+                  ? "少し待って再分析"
+                  : "再分析する"}
             </button>
           </>
         ) : (
@@ -406,9 +462,13 @@ export function AiPostVerdictBadge({
             type="button"
             className="rounded border px-2 py-1 text-[11px] bg-blue-50 hover:bg-blue-100 disabled:opacity-60"
             onClick={handleCalc}
-            disabled={loading}
+            disabled={actionDisabled}
           >
-            {loading ? "分析中…" : "この投稿を分析"}
+            {loading
+              ? "分析中…"
+              : cooldown
+                ? "少し待って再分析"
+                : "この投稿を分析"}
           </button>
         )}
 
@@ -429,9 +489,9 @@ export function AiPostVerdictBadge({
                 {verdictLabel}
               </span>
             </div>
-            {ai.reason && (
+            {displayReason && (
               <p className="text-[11px] leading-relaxed text-slate-700 whitespace-pre-wrap">
-                {ai.reason}
+                {displayReason}
               </p>
             )}
           </div>
