@@ -20,10 +20,10 @@ const steps = [
     label: "タイムラインへ",
   },
   {
-    title: "3. キャラを育てる",
+    title: "3. マイ恐竜を見る",
     body: "投稿履歴と反応からキャラスコアが育ち、相性やキャラTLに反映されます。",
     href: "/dashboard/persona",
-    label: "キャラ分析へ",
+    label: "あなたの恐竜を確認",
   },
 ];
 
@@ -38,9 +38,14 @@ export default function SignedInDemoGuide({ compact = false }: Props) {
             投稿をAI判定で楽しみ、そのシグナルの積み重ねからあなた自身のキャラを育てます。
           </p>
         </div>
-        <Link href="/search" className="rounded-full border border-blue-200 bg-white px-3 py-1.5 text-sm text-blue-800">
-          投稿を探す
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/dashboard/persona" className="rounded-full bg-blue-700 px-3 py-1.5 text-sm text-white hover:bg-blue-800">
+            あなたの恐竜を確認する
+          </Link>
+          <Link href="/search" className="rounded-full border border-blue-200 bg-white px-3 py-1.5 text-sm text-blue-800">
+            投稿を探す
+          </Link>
+        </div>
       </div>
       {!compact && (
         <div className="mt-3 grid gap-2 md:grid-cols-3">

@@ -231,10 +231,10 @@ export default function PersonaDashboardPage() {
         <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">
           Persona Insights
         </div>
-        <h1 className="mt-1 text-2xl font-bold">キャラ分析</h1>
+        <h1 className="mt-1 text-2xl font-bold">マイ恐竜</h1>
         <p className="mt-2 text-sm leading-6 text-slate-600">
-          投稿から見えてきたキャラのバランス、最近の勢い、今日試せるクエストをまとめて確認できます。
-          あなたの言葉がどんな社会的な個性として届いているかを眺める場所です。
+          あなたの投稿傾向から育っているメイン恐竜・サブ恐竜と、最近の成長シグナルを確認できます。
+          図鑑とは違い、あなた自身の恐竜のスコアや育った理由を見る場所です。
         </p>
         <div className="mt-2 flex flex-wrap gap-3 text-sm">
           <Link href="/persona-feed" className="underline">
@@ -254,7 +254,7 @@ export default function PersonaDashboardPage() {
             <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
               Your Evolving Persona
             </div>
-            <h2 className="mt-1 text-lg font-bold text-slate-950">あなたのキャラ</h2>
+            <h2 className="mt-1 text-lg font-bold text-slate-950">あなたの恐竜キャラ</h2>
             <p className="mt-1 text-sm leading-6 text-slate-600">
               投稿から得られた成長シグナル、AI判定、継続、反応、最近の勢いを合わせて、いま強く出ているあなたのキャラを表示します。
             </p>

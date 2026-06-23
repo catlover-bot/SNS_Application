@@ -80,9 +80,9 @@ export default function Nav() {
     { href: "/search", label: "検索" },
     { href: "/trending", label: "トレンド" },
     { href: "/personas", label: "図鑑" },
-    { href: "/support", label: "ヘルプ" },
   ];
   const privateLinks = [
+    { href: "/dashboard/persona", label: "マイ恐竜" },
     { href: "/home", label: "タイムライン" },
     { href: "/persona-feed", label: "キャラTL" },
     { href: "/compose", label: "投稿" },
@@ -93,7 +93,11 @@ export default function Nav() {
     { href: "/messages", label: "DM" },
     { href: "/notifications", label: "通知" },
   ];
-  const appLinks = loggedIn ? [...publicLinks, ...privateLinks] : publicLinks;
+  const appLinks = [
+    ...publicLinks,
+    ...(loggedIn ? privateLinks : []),
+    { href: "/support", label: "ヘルプ" },
+  ];
 
   return (
     <header className="sticky top-0 bg-white/85 backdrop-blur z-40 border-b border-slate-200">

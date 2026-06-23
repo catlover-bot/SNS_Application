@@ -1126,7 +1126,7 @@ export default function PersonaFeedPage() {
         </div>
         <div className="flex flex-wrap gap-3 text-sm">
           <a href="/dashboard/persona" className="underline">
-            キャラスコアを見る
+            マイ恐竜を見る
           </a>
           <a href="/persona-evolution" className="underline">
             キャラ進化を見る
@@ -1512,7 +1512,7 @@ export default function PersonaFeedPage() {
               投稿する
             </a>
             <a href="/dashboard/persona" className="rounded-full border border-slate-200 bg-white px-4 py-2 hover:bg-slate-50">
-              キャラ分析を見る
+              マイ恐竜を見る
             </a>
             <a href="/" className="rounded-full border border-slate-200 bg-white px-4 py-2 hover:bg-slate-50">
               ホームへ

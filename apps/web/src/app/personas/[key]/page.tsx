@@ -430,6 +430,19 @@ export default function PersonaDetailPage() {
         <p className="mt-1 text-sm leading-6 text-amber-950">{catalogProfile.evolutionHint}</p>
       </section>
 
+      <section className="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 sm:px-6 sm:py-4">
+        <div className="text-sm font-semibold text-indigo-950">あなた自身の恐竜を見てみる</div>
+        <p className="mt-1 text-sm leading-6 text-indigo-900/80">
+          図鑑は12体の恐竜を見る場所です。あなた自身の恐竜は、投稿の成長シグナルから育ちます。
+        </p>
+        <Link
+          href="/dashboard/persona"
+          className="mt-3 inline-flex rounded-full bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+        >
+          マイ恐竜を確認する
+        </Link>
+      </section>
+
       <div className="flex flex-wrap gap-2">
         <Link href="/compose" className="rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">
           この恐竜を育てる投稿を書く

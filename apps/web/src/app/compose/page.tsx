@@ -841,7 +841,7 @@ export default function Compose() {
               </a>
             ) : null}
             <a href="/dashboard/persona" className="rounded-full border border-emerald-200 bg-white px-3 py-1.5">
-              キャラ分析を見る
+              マイ恐竜を見る
             </a>
             <a href="/persona-feed" className="rounded-full border border-emerald-200 bg-white px-3 py-1.5">
               キャラTLへ

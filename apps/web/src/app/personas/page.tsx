@@ -98,12 +98,20 @@ export default async function PersonasCatalogPage() {
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h1 className="mt-1 text-2xl font-bold">恐竜図鑑</h1>
-            <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-              全{items.length}体
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                全{items.length}体
+              </span>
+              <Link
+                href="/dashboard/persona"
+                className="rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+              >
+                自分の恐竜を見る
+              </Link>
+            </div>
           </div>
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            投稿の成長シグナルから育つ恐竜キャラの一覧です。あなたの傾向や、相性の良いタイプを探せます。
+            12体の恐竜キャラの特徴を見られる場所です。あなた自身の恐竜は、投稿の成長シグナルから育ちます。
           </p>
           {discoveredCount !== null && (
             <p className="mt-2 text-xs text-slate-500">
