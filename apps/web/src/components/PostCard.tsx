@@ -482,8 +482,9 @@ export default function PostCard({
           .eq("value", -1),
         sb
           .from("user_post_open_state")
-          .select("id", { count: "exact", head: true })
-          .eq("post_id", p.id),
+          .select("post_id", { count: "exact", head: true })
+          .eq("post_id", p.id)
+          .eq("user_id", user.id),
         sb
           .from("user_reports")
           .select("id", { count: "exact", head: true })

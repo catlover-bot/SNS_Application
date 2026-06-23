@@ -1,7 +1,7 @@
 ﻿// apps/web/src/app/compose/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   analyzeLieScore,
   analyzePersonaBuzz,
@@ -158,6 +158,18 @@ const COMPOSE_SAVE_ERROR =
 const MEDIA_UPLOAD_ERROR =
   "画像をアップロードできませんでした。画像を外して投稿するか、時間をおいて再度お試しください。";
 
+async function runPostSubmitAutomation(postId: string) {
+  const results = await Promise.allSettled([
+    fetch(`/api/posts/${encodeURIComponent(postId)}/ai-score`, { method: "POST" }),
+    fetch("/api/personas/recompute", { method: "POST" }),
+  ]);
+
+  return {
+    aiScoreOk: results[0].status === "fulfilled" && results[0].value.ok,
+    personaRecomputeOk: results[1].status === "fulfilled" && results[1].value.ok,
+  };
+}
+
 function toCompatPercent(v: number | null | undefined) {
   const n = Number(v ?? 0);
   if (!Number.isFinite(n) || n <= 0) return 0;
@@ -233,6 +245,7 @@ export default function Compose() {
   const [lastPostedPerformance, setLastPostedPerformance] = useState<PostPerformanceResponse | null>(null);
   const [lastPostedPerformanceLoading, setLastPostedPerformanceLoading] = useState(false);
   const [lastPostedPerformanceError, setLastPostedPerformanceError] = useState<string | null>(null);
+  const latestPostedPostIdRef = useRef<string | null>(null);
   const selectedPersona = useMemo(
     () => personaCandidates.find((x) => x.key === selectedPersonaKey) ?? null,
     [personaCandidates, selectedPersonaKey]
@@ -683,12 +696,32 @@ export default function Compose() {
       if (error) {
         setFormError(COMPOSE_SAVE_ERROR);
       } else {
+        const postId = String(data?.id ?? "").trim();
         // 投稿結果カードを表示するため、この画面に残す
-        setLastPostedPostId(data.id);
-        setLastPostedNotice("投稿しました。キャラ分析とおすすめタイムラインに少しずつ反映されます。");
+        latestPostedPostIdRef.current = postId || null;
+        setLastPostedPostId(postId || null);
+        setLastPostedNotice(
+          postId
+            ? "投稿しました。AI判定とキャラ分析を更新しています…"
+            : "投稿しました。分析はあとで再試行できます。"
+        );
         setLastPostedPerformance(null);
         setLastPostedPerformanceError(null);
-        void loadPostPerformance(data.id);
+        if (postId) {
+          void loadPostPerformance(postId);
+          void runPostSubmitAutomation(postId).then(({ aiScoreOk, personaRecomputeOk }) => {
+            if (latestPostedPostIdRef.current !== postId) return;
+            if (aiScoreOk && personaRecomputeOk) {
+              setLastPostedNotice("投稿しました。AI判定とキャラ分析を更新しました。");
+            } else if (personaRecomputeOk) {
+              setLastPostedNotice("投稿しました。キャラ分析を更新しました。AI判定はあとで再試行できます。");
+            } else if (aiScoreOk) {
+              setLastPostedNotice("投稿しました。AI判定を更新しました。キャラ分析はあとで再試行できます。");
+            } else {
+              setLastPostedNotice("投稿しました。一部の分析はあとで再試行できます。");
+            }
+          });
+        }
 
         setText("");
         setFile(null);
@@ -699,6 +732,8 @@ export default function Compose() {
         setComposeFormatMode("post");
         setMissionRewriteAttribution(null);
       }
+    } catch {
+      setFormError(COMPOSE_SAVE_ERROR);
     } finally {
       setPosting(false);
     }
