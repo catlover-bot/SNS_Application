@@ -414,7 +414,7 @@ export default function Compose() {
         });
         const json = await res.json().catch(() => null);
         if (!res.ok || !json) {
-          throw new Error("キャラ候補の取得に失敗しました");
+          throw new Error("成長傾向の取得に失敗しました");
         }
         if (stop) return;
         const items = (json.items ?? []) as PersonaSuggestion[];
@@ -428,7 +428,7 @@ export default function Compose() {
         );
       } catch (e: any) {
         if (!stop) {
-          setPersonaError("キャラ候補の取得に失敗しました。本文を少し変えてもう一度お試しください。");
+          setPersonaError("キャラ成長への影響予測を取得できませんでした。本文を少し変えてもう一度お試しください。");
           setPersonaCandidates([]);
         }
       } finally {
@@ -777,8 +777,8 @@ export default function Compose() {
         </div>
         <h1 className="mt-1 text-2xl font-bold">投稿からキャラを育てる</h1>
         <p className="mt-2 text-sm leading-6 text-slate-600">
-          本文を書くと、AI判定と投稿キャラ候補が表示されます。投稿後は履歴と反応がキャラスコアに加わり、
-          あなたらしいキャラとキャラTLが少しずつ育ちます。
+          本文を書くと、AIが投稿のクセを読み取り、あなたのキャラ成長にどう影響しそうかを予測します。
+          投稿後は、そのシグナルと反応が履歴に積み重なり、あなた自身のキャラとキャラTLが少しずつ育ちます。
         </p>
       </header>
 
@@ -787,8 +787,8 @@ export default function Compose() {
         <div className="mt-2 grid gap-2 sm:grid-cols-3">
           {[
             ["AI判定", "事実っぽさ・盛り・自慢・ネタの4つを見える化"],
-            ["キャラ成長", "投稿の雰囲気がキャラスコアと進化履歴に追加"],
-            ["キャラTLへ反映", "同じキャラや相性の良い投稿と出会いやすくなる"],
+            ["キャラ成長", "投稿の雰囲気が成長シグナルとして履歴に追加"],
+            ["キャラTLへ反映", "似たキャラ傾向のユーザーや相性の良い話題と出会いやすくなる"],
           ].map(([title, body], index) => (
             <div key={title} className="rounded-lg border border-blue-100 bg-white p-3">
               <div className="text-xs font-semibold text-blue-700">STEP {index + 1}</div>
@@ -869,7 +869,7 @@ export default function Compose() {
         </div>
         <div className="text-xs opacity-70">
           {composeFormatMode === "post"
-            ? "通常投稿: キャラ付けとリライトを見ながら、いつもの投稿として出します。"
+            ? "通常投稿: キャラ成長への影響予測とリライトを見ながら、いつもの投稿として出します。"
             : composeFormatMode === "short"
             ? "短尺投稿: 冒頭のフックを優先して短く整えます。"
             : "ストーリー: 1〜3行で感情共有しやすい形に整えます。"}
@@ -943,8 +943,8 @@ export default function Compose() {
                   <div className="text-xs opacity-70 mt-1">
                     投稿のクセ {lastPostedPerformance.post.lieScorePct}% /{" "}
                     {lastPostedPerformance.post.persona?.selected
-                      ? `投稿キャラ @${lastPostedPerformance.post.persona.selected}`
-                      : "キャラ未確定"}
+                      ? `成長シグナル @${lastPostedPerformance.post.persona.selected}`
+                      : "成長シグナル未分析"}
                   </div>
                 </div>
                 <div className="rounded-lg border bg-slate-50 p-3">
@@ -1062,7 +1062,7 @@ export default function Compose() {
             投稿の本文
           </label>
           <p className="mt-1 text-xs leading-5 text-slate-600">
-            本文を書くと、AI判定と投稿キャラ候補がこの画面に表示されます。外部の事実確認ではなく、言葉のクセと雰囲気を楽しむ分析です。
+            本文を書くと、AI判定とキャラ成長への影響予測が表示されます。外部の事実確認ではなく、言葉のクセと雰囲気を楽しむ分析です。
           </p>
         </div>
         {!text.trim() && !lastPostedPostId && (
@@ -1131,11 +1131,14 @@ export default function Compose() {
         </div>
       )}
       <div className="space-y-2">
-        <div className="text-sm font-medium">キャラ付け（投稿文から推定）</div>
+        <div className="text-sm font-medium">この投稿が伸ばしそうな傾向</div>
+        <p className="text-xs leading-5 text-slate-600">
+          投稿自体にキャラを付けるものではなく、あなたのキャラ成長に加わるシグナルの予測です。
+        </p>
         {personaLoading ? (
-          <div className="text-sm opacity-70">候補を解析中…</div>
+          <div className="text-sm opacity-70">成長傾向を解析中…</div>
         ) : personaCandidates.length === 0 ? (
-          <div className="text-sm opacity-70">6文字以上入力すると候補を表示します。</div>
+          <div className="text-sm opacity-70">6文字以上入力すると、キャラ成長への影響予測を表示します。</div>
         ) : (
           <div className="flex flex-wrap gap-2">
             {personaCandidates.map((c) => (
@@ -1214,13 +1217,13 @@ export default function Compose() {
         )}
       </div>
       <div className="space-y-3 rounded-lg border p-3 bg-white">
-        <div className="text-sm font-medium">相性バディ提案</div>
+        <div className="text-sm font-medium">相性の良い傾向を提案</div>
         {!selectedPersonaKey ? (
-          <div className="text-sm opacity-70">主キャラを選ぶと、相性の良い副キャラを提案します。</div>
+          <div className="text-sm opacity-70">中心にする成長傾向を選ぶと、相性の良い傾向を提案します。</div>
         ) : compatLoading ? (
           <div className="text-sm opacity-70">相性データを取得中…</div>
         ) : compatSuggestions.length === 0 ? (
-          <div className="text-sm opacity-70">この主キャラの相性候補はまだありません。</div>
+          <div className="text-sm opacity-70">この成長傾向と相性の良い候補はまだありません。</div>
         ) : (
           <div className="flex flex-wrap gap-2">
             {compatSuggestions.slice(0, 8).map((item) => (
@@ -1241,19 +1244,19 @@ export default function Compose() {
           </div>
         )}
         {compatError && <div className="text-sm text-red-600">{compatError}</div>}
-        <div className="text-xs opacity-70">タップすると副キャラに設定され、主65% / 副35%に自動調整します。</div>
+        <div className="text-xs opacity-70">タップすると混ぜる傾向に設定され、中心65% / ミックス35%に自動調整します。</div>
       </div>
       <div className="space-y-3 rounded-lg border p-3 bg-white">
-        <div className="text-sm font-medium">デュアルキャラ・ブレンド草案</div>
+        <div className="text-sm font-medium">2つの傾向を混ぜた草案</div>
         {!selectedPersonaKey ? (
-          <div className="text-sm opacity-70">まず主キャラを1つ選ぶと、混合草案を生成できます。</div>
+          <div className="text-sm opacity-70">まず中心にする成長傾向を1つ選ぶと、混合草案を生成できます。</div>
         ) : blendSecondaryOptions.length === 0 ? (
-          <div className="text-sm opacity-70">副キャラ候補がありません。</div>
+          <div className="text-sm opacity-70">混ぜられる傾向がまだありません。</div>
         ) : (
           <>
             <div className="grid md:grid-cols-2 gap-2">
               <label className="text-sm space-y-1">
-                <div className="opacity-70">副キャラ</div>
+                <div className="opacity-70">混ぜる傾向</div>
                 <select
                   className="w-full border rounded px-3 py-2 bg-white"
                   value={blendSecondaryKey}
@@ -1268,7 +1271,7 @@ export default function Compose() {
               </label>
               <label className="text-sm space-y-1">
                 <div className="opacity-70">
-                  主キャラ配分 {blendPrimarySharePct}% / 副キャラ {100 - blendPrimarySharePct}%
+                  中心の傾向 {blendPrimarySharePct}% / 混ぜる傾向 {100 - blendPrimarySharePct}%
                 </div>
                 <input
                   type="range"

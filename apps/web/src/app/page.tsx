@@ -144,8 +144,8 @@ export default function Home() {
               投稿するほど、あなたのキャラが育つ。
             </h1>
             <p className="text-sm leading-6 text-slate-600">
-              PersonaLens は、投稿文の雰囲気から「事実っぽさ・盛ってる度・自慢・マウント感・ネタ度」をAI判定し、
-              あなたらしい投稿キャラを育てるSNSです。まじめな事実確認ではなく、言葉のクセを遊びながら楽しめます。
+              PersonaLens は、投稿のクセをAIが読み取り、そのシグナルの積み重ねからあなた自身のキャラが育つSNSです。
+              まじめな事実確認ではなく、言葉のクセを遊びながら楽しめます。
             </p>
             <div className="flex flex-wrap gap-2">
               <a
@@ -174,7 +174,7 @@ export default function Home() {
               {[
                 ["1", "投稿する", "近況や気づきを、いつもの言葉で書くだけ。"],
                 ["2", "AIが投稿のクセを判定", "4つのスコアと理由・タグで雰囲気を見える化。"],
-                ["3", "投稿キャラが育つ", "投稿履歴と反応からキャラスコアが少しずつ変化。"],
+                ["3", "あなたのキャラが育つ", "投稿ごとのシグナルと反応が積み重なり、キャラスコアが少しずつ変化。"],
               ].map(([number, title, body]) => (
                 <div key={number} className="flex gap-3 rounded-lg border border-blue-100 bg-white/80 p-3">
                   <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 font-bold text-white">
@@ -209,7 +209,7 @@ export default function Home() {
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">
           <div className="font-semibold text-slate-900">まだ投稿がありません</div>
           <p className="mt-1">
-            最初の投稿を作ると、文体やムードからあなたのキャラ候補が表示されます。
+            最初の投稿の文体やムードが、あなたのキャラ成長を始めるシグナルになります。
           </p>
           <a className="mt-3 inline-flex rounded-full bg-blue-600 px-4 py-2 text-white hover:bg-blue-700" href="/compose">
             最初の投稿を作る

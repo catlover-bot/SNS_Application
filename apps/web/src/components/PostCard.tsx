@@ -1139,8 +1139,11 @@ export default function PostCard({
       {/* 本文 */}
       {postPersonaKey && (
         <div className="text-xs inline-flex">
-          <span className="px-2 py-0.5 rounded-full border bg-blue-50 border-blue-300">
-            投稿キャラ @{postPersonaKey}
+          <span
+            className="px-2 py-0.5 rounded-full border bg-blue-50 border-blue-300"
+            title="この投稿から得られたキャラ成長のシグナルです。投稿自体のキャラではありません。"
+          >
+            成長シグナル: @{postPersonaKey}
           </span>
         </div>
       )}

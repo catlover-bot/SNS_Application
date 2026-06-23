@@ -269,16 +269,16 @@ export function buildPersonaScoreBreakdowns(args: {
     const factors: PersonaScoreFactor[] = [
       {
         key: "persona_match",
-        label: "投稿キャラ一致度",
+        label: "投稿傾向との一致",
         points: personaMatchPoints,
-        description: `${matchingPosts}件の投稿で、${title}に近いキャラ候補やスコアが見つかりました。`,
+        description: `${matchingPosts}件の投稿に、${title}らしい言葉遣いや雰囲気が見つかりました。`,
       },
       {
         key: "ai_style",
         label: "AI判定による性格成分",
         points: aiStylePoints,
         description: averages
-          ? `投稿文の事実っぽさ・盛り・自慢・ネタのバランスを${title}の特徴と照らし合わせています。`
+          ? `投稿文の事実っぽさ・盛ってる度・自慢・マウント感・ネタ・ジョーク度から、${title}に近い傾向を見ています。`
           : "実AI判定の投稿が増えると、言葉のクセによる加点が見えるようになります。",
       },
       {
@@ -286,8 +286,8 @@ export function buildPersonaScoreBreakdowns(args: {
         label: "継続投稿ボーナス",
         points: consistencyPoints,
         description: matchingPosts >= 2
-          ? `同じ投稿キャラのシグナルが${matchingPosts}件で繰り返し現れています。`
-          : "同じ投稿キャラが続けて現れると、キャラの輪郭が強くなります。",
+          ? `似たキャラ成長シグナルが${matchingPosts}件の投稿で繰り返し現れています。`
+          : "似た投稿傾向が続けて現れると、あなたのキャラの輪郭が強くなります。",
       },
       {
         key: "reactions",
@@ -302,25 +302,25 @@ export function buildPersonaScoreBreakdowns(args: {
         label: "最近の勢い",
         points: recencyPoints,
         description: recentMatchingPosts > 0
-          ? `直近14日で${recentMatchingPosts}件の関連投稿があり、最近の傾向として反映されています。`
+          ? `直近14日で${recentMatchingPosts}件の投稿から成長シグナルが得られ、最近の傾向として反映されています。`
           : "最近の投稿ほど少し強く反映されます。",
       },
     ];
 
     const recentSignals: string[] = [];
-    if (matchingPosts > 0) recentSignals.push(`${matchingPosts}件の投稿でキャラ一致`);
+    if (matchingPosts > 0) recentSignals.push(`${matchingPosts}件の投稿に近い成長傾向`);
     if (averages) {
       const [label, value] = dominantAiSignal(averages);
       recentSignals.push(`AI判定は「${label}」が${Math.round(value * 100)}%で最も強め`);
     }
-    if (reactionCount > 0) recentSignals.push(`関連投稿に${reactionCount}件の反応`);
-    if (recentMatchingPosts > 0) recentSignals.push(`直近14日の関連投稿 ${recentMatchingPosts}件`);
+    if (reactionCount > 0) recentSignals.push(`成長シグナルのある投稿に${reactionCount}件の反応`);
+    if (recentMatchingPosts > 0) recentSignals.push(`直近14日の成長シグナル ${recentMatchingPosts}件`);
     if (!recentSignals.length) recentSignals.push("投稿が増えると、ここにキャラ成長の理由が表示されます");
 
     const strongest = [...factors].sort((a, b) => b.points - a.points).slice(0, 2);
     const reason = strongest.length >= 2
       ? `${title}らしさは「${strongest[0].label}」と「${strongest[1].label}」が主な理由です。投稿が増えるほど、最近の言葉のクセに合わせて内訳も変化します。`
-      : `${title}らしさは、いま確認できる投稿キャラのシグナルから計算しています。`;
+      : `${title}らしさは、いま確認できる投稿傾向とキャラ成長シグナルから計算しています。`;
 
     return {
       personaKey,

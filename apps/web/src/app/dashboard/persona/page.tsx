@@ -125,7 +125,7 @@ export default function PersonaDashboardPage() {
       } catch {
         if (!alive) return;
         setProfile(null);
-        setProfileError("投稿キャラを読み込めませんでした。時間をおいてもう一度お試しください。");
+        setProfileError("キャラ分析を読み込めませんでした。時間をおいてもう一度お試しください。");
       } finally {
         if (alive) setProfileLoading(false);
       }
@@ -253,11 +253,11 @@ export default function PersonaDashboardPage() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
-              Your Posting Persona
+              Your Evolving Persona
             </div>
-            <h2 className="mt-1 text-lg font-bold text-slate-950">あなたの投稿キャラ</h2>
+            <h2 className="mt-1 text-lg font-bold text-slate-950">あなたのキャラ</h2>
             <p className="mt-1 text-sm leading-6 text-slate-600">
-              投稿キャラ、AI判定、継続、反応、最近の勢いを合わせて、いま強く出ているキャラを表示します。
+              投稿から得られた成長シグナル、AI判定、継続、反応、最近の勢いを合わせて、いま強く出ているあなたのキャラを表示します。
             </p>
           </div>
           <Link href="/personas" className="rounded-full border border-indigo-200 px-3 py-1.5 text-sm text-indigo-700">
@@ -322,7 +322,7 @@ export default function PersonaDashboardPage() {
                 <div>
                   <h3 className="font-semibold text-slate-950">なぜこのキャラ？</h3>
                   <p className="mt-1 text-sm leading-6 text-slate-600">
-                    {mainBreakdown?.reason ?? "投稿キャラの一致度と、これまで蓄積されたキャラスコアから選ばれています。"}
+                    {mainBreakdown?.reason ?? "最近の投稿傾向と、これまで蓄積されたキャラ成長シグナルから選ばれています。"}
                   </p>
                 </div>
 
@@ -347,7 +347,7 @@ export default function PersonaDashboardPage() {
 
                 {(mainBreakdown?.recentSignals?.length ?? 0) > 0 && (
                   <div>
-                    <div className="text-xs font-semibold text-slate-700">最近の成長シグナル</div>
+                    <div className="text-xs font-semibold text-slate-700">最近の投稿から見えた傾向</div>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {mainBreakdown!.recentSignals.map((signal) => (
                         <span key={signal} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700">
@@ -362,7 +362,7 @@ export default function PersonaDashboardPage() {
 
             {subPersonas.length > 0 && (
               <div>
-                <h3 className="text-sm font-semibold text-slate-900">サブキャラ</h3>
+                <h3 className="text-sm font-semibold text-slate-900">あなたのサブキャラ</h3>
                 <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {subPersonas.map((persona) => {
                     const definition = defsByKey.get(persona.persona_key);

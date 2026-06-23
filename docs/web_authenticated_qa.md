@@ -261,9 +261,9 @@ Use this concise story during a portfolio demo:
 
 1. "A user posts their thoughts."
    - Sign in, open `/compose`, write a short thought, and submit it.
-2. "The app analyzes posts into a persona."
+2. "Each post contributes AI-derived persona growth signals."
    - Show the post success state, then open `/dashboard/persona`.
-3. "The persona evolves over time."
+3. "Those signals accumulate and the user's persona evolves over time."
    - Create or reference several posts, then open `/persona-evolution`.
 4. "The persona affects feeds."
    - Open `/persona-feed`, switch modes, and open a recommended post.

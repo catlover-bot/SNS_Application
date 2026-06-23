@@ -53,6 +53,8 @@ function postRecencyWeight(createdAt: string, nowMs: number) {
 }
 
 function analysisCandidates(analysis: any) {
+  // Persisted for schema compatibility: these values are per-post growth signals,
+  // not characters owned by individual posts.
   const selected = String(analysis?.persona?.selected ?? "").trim();
   const candidates = Array.isArray(analysis?.persona?.candidates)
     ? analysis.persona.candidates

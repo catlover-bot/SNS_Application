@@ -2,7 +2,7 @@
 
 Next.js App Router frontend for the Supabase-backed persona SNS.
 
-PersonaLens is a character/persona-based SNS: posts are analyzed, user personas evolve over time, and timelines can be personalized by persona compatibility and user feedback.
+PersonaLens is not a per-post character assignment app. Each post contributes AI-derived signals, those signals accumulate over time, and the user's persona evolves from their posting history. Timelines can then be personalized by persona compatibility and user feedback.
 
 ## Development
 

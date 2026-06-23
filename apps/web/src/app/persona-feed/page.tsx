@@ -253,7 +253,7 @@ function explainPersonaFeedReason(match: MatchMeta | undefined, basePersona: str
 
   if (reason === "same_persona") {
     lines.push(
-      `あなたの主キャラ${basePersona ? ` (@${basePersona})` : ""}と投稿キャラが近いため優先表示されています。`
+      `あなたの主キャラ${basePersona ? ` (@${basePersona})` : ""}と、この投稿から得られた成長傾向が近いため優先表示されています。`
     );
   } else if (reason.startsWith("buddy_compat_")) {
     const buddyKey = reason.replace(/^buddy_compat_/, "");
@@ -1120,7 +1120,7 @@ export default function PersonaFeedPage() {
           </div>
           <h1 className="mt-1 text-2xl font-bold">キャラ別タイムライン</h1>
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            {hint} あなたの投稿キャラを軸に、投稿を開く、返信する、興味なしにするほど、相性の良いキャラや話題が見つかりやすくなります。
+            {hint} あなたのキャラ傾向を軸に、投稿を開く、返信する、興味なしにするほど、相性の良いユーザーや話題が見つかりやすくなります。
           </p>
         </div>
         <div className="flex flex-wrap gap-3 text-sm">
@@ -1504,7 +1504,7 @@ export default function PersonaFeedPage() {
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">
           <div className="font-semibold text-slate-900">キャラ別タイムラインはこれから育ちます</div>
           <p className="mt-1">
-            投稿を作成してキャラ候補を増やすか、通常タイムラインで気になる投稿を開くと、おすすめの材料が増えます。
+            投稿を作成してキャラ成長の材料を増やすか、通常タイムラインで気になる投稿を開くと、おすすめの材料が増えます。
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <a href="/compose" className="rounded-full bg-blue-600 px-4 py-2 text-white hover:bg-blue-700">
