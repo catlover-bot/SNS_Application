@@ -31,11 +31,10 @@ function toInitials(value: string): string {
 }
 
 export function resolveSocialIdentity(input: SocialIdentityInput): SocialIdentity {
-  const id = clean(input.id);
   const handle = clean(input.handle);
   const displayName = clean(input.displayName);
-  const fallbackIdLabel = id ? id.slice(0, 8) : null;
-  const primaryLabel = displayName ?? handle ?? fallbackIdLabel ?? "unknown";
+  const fallbackIdLabel = null;
+  const primaryLabel = displayName ?? handle ?? "名無し恐竜使い";
   const normalizedHandle = handle ? handle.replace(/^@+/, "") : null;
   const handleLabel =
     normalizedHandle && normalizedHandle !== primaryLabel ? `@${normalizedHandle}` : null;
@@ -50,14 +49,8 @@ export function resolveSocialIdentity(input: SocialIdentityInput): SocialIdentit
 }
 
 export function resolveSocialIdentityLabels(identity: SocialIdentity): SocialIdentityLabels {
-  const fallbackHandleLike = identity.fallbackIdLabel ? `@${identity.fallbackIdLabel}` : null;
-  const primary = identity.handleLabel ?? fallbackHandleLike ?? identity.primaryLabel;
-  const secondary =
-    identity.primaryLabel &&
-    identity.primaryLabel !== primary &&
-    identity.primaryLabel !== identity.fallbackIdLabel
-      ? identity.primaryLabel
-      : null;
+  const primary = identity.primaryLabel;
+  const secondary = identity.handleLabel;
   return { primary, secondary };
 }
 

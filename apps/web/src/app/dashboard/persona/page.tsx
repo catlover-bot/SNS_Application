@@ -99,6 +99,37 @@ function factorMaxPoints(key: PersonaScoreBreakdown["factors"][number]["key"]) {
   return 10;
 }
 
+function DinosaurImage({
+  personaKey,
+  displayName,
+  fallbackEmoji,
+  className,
+}: {
+  personaKey: string;
+  displayName: string;
+  fallbackEmoji: string;
+  className: string;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  if (failed) {
+    return (
+      <span className="flex h-full w-full items-center justify-center text-3xl" aria-label={displayName}>
+        {fallbackEmoji}
+      </span>
+    );
+  }
+
+  return (
+    <img
+      src={`/api/personas/image/${encodeURIComponent(personaKey)}`}
+      alt={displayName}
+      className={className}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 export default function PersonaDashboardPage() {
   const [soulmates, setSoulmates] = useState<Soulmate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -288,8 +319,13 @@ export default function PersonaDashboardPage() {
               <article className={`rounded-xl border border-indigo-200 bg-gradient-to-br p-4 ${mainColor.card}`}>
                 <div className="text-xs font-semibold text-indigo-700">あなたのメイン恐竜</div>
                 <div className="mt-3 flex items-center gap-3">
-                  <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-white/80 text-2xl shadow-sm ${mainColor.soft}`} aria-hidden="true">
-                    {mainCharacterProfile?.iconEmoji}
+                  <div className={`h-24 w-24 shrink-0 overflow-hidden rounded-2xl border border-white/80 bg-white/80 shadow-sm ${mainColor.soft}`}>
+                    <DinosaurImage
+                      personaKey={mainPersona.persona_key}
+                      displayName={mainCharacterProfile?.displayName ?? "メイン恐竜"}
+                      fallbackEmoji={mainCharacterProfile?.iconEmoji ?? mainCharacterProfile?.silhouetteEmoji ?? "🦖"}
+                      className="h-full w-full object-contain"
+                    />
                   </div>
                   <div className="min-w-0">
                     <div className="text-xl font-bold text-slate-950">
@@ -399,8 +435,13 @@ export default function PersonaDashboardPage() {
                     return (
                       <article key={persona.persona_key} className={`rounded-xl border border-slate-200 bg-gradient-to-br p-3 ${color.card}`}>
                         <div className="flex items-center gap-2">
-                          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/80 text-lg ${color.soft}`} aria-hidden="true">
-                            {characterProfile.iconEmoji}
+                          <div className={`h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-white/80 bg-white/80 ${color.soft}`}>
+                            <DinosaurImage
+                              personaKey={persona.persona_key}
+                              displayName={characterProfile.displayName}
+                              fallbackEmoji={characterProfile.iconEmoji ?? characterProfile.silhouetteEmoji ?? "🦕"}
+                              className="h-full w-full object-contain"
+                            />
                           </div>
                           <div className="min-w-0">
                             <div className="truncate text-sm font-semibold text-slate-900">

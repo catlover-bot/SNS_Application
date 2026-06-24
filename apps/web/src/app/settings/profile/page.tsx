@@ -12,6 +12,14 @@ import {
 } from "@sns/core";
 import { supabaseClient as supabase } from "@/lib/supabase/client";
 
+type SavedProfile = {
+  display_name: string | null;
+  handle: string | null;
+  bio: string | null;
+  avatar_url: string | null;
+  updated_at: string | null;
+};
+
 export default function ProfileSettings() {
   const sb = useMemo(() => supabase(), []); // ← ここでインスタンス化
 
@@ -45,17 +53,16 @@ export default function ProfileSettings() {
       if (!user) { location.href = "/login?next=/settings/profile"; return; }
       setUid(user.id);
 
-      const { data: prof } = await sb
-        .from("profiles")
-        .select("handle, display_name, bio, avatar_url")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      if (prof) {
+      const profileRes = await fetch("/api/me/profile", { cache: "no-store" });
+      const profileJson = await profileRes.json().catch(() => null);
+      const prof = profileJson?.profile as SavedProfile | undefined;
+      if (profileRes.ok && prof) {
         setHandle(prof.handle ?? "");
         setDisplayName(prof.display_name ?? "");
         setBio(prof.bio ?? "");
         setAvatar(prof.avatar_url ?? null);
+      } else {
+        setMsg("プロフィールを読み込めませんでした。時間をおいて再度お試しください。");
       }
 
       setPushSummary({
@@ -140,6 +147,16 @@ export default function ProfileSettings() {
       setSaving(false);
       return;
     }
+    if (displayName.trim().length > 50) {
+      setMsg("表示名は50文字以内で入力してください。");
+      setSaving(false);
+      return;
+    }
+    if (bio.trim().length > 300) {
+      setMsg("自己紹介は300文字以内で入力してください。");
+      setSaving(false);
+      return;
+    }
 
     try {
       let avatar_url = avatar;
@@ -154,29 +171,36 @@ export default function ProfileSettings() {
         avatar_url = sb.storage.from("avatars").getPublicUrl(path).data.publicUrl;
       }
 
-      const { error: upErr } = await sb
-        .from("profiles")
-        .update({
+      const saveRes = await fetch("/api/me/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           handle,
           display_name: displayName || null,
           bio: bio || null,
           avatar_url,
-        })
-        .eq("id", uid);
-
-      if (upErr) {
+        }),
+      });
+      const saveJson = await saveRes.json().catch(() => null);
+      if (!saveRes.ok || !saveJson?.profile) {
+        const code = String(saveJson?.error ?? "");
         setMsg(
-          upErr.code === "23505"
+          code === "handle_already_used"
             ? "そのユーザー名は既に使われています。"
-            : upErr.code === "23514"
+            : code === "invalid_handle"
             ? "ユーザー名の形式が不正です。"
             : "プロフィールを保存できませんでした。時間をおいて再度お試しください。"
         );
-      } else {
-        setAvatar(avatar_url);
-        setFile(null);
-        setMsg("保存しました。");
+        return;
       }
+
+      const saved = saveJson.profile as SavedProfile;
+      setHandle(saved.handle ?? "");
+      setDisplayName(saved.display_name ?? "");
+      setBio(saved.bio ?? "");
+      setAvatar(saved.avatar_url ?? null);
+      setFile(null);
+      setMsg("Supabase に保存しました。");
     } catch {
       setMsg("プロフィールを保存できませんでした。時間をおいて再度お試しください。");
     } finally {

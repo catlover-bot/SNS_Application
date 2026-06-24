@@ -21,17 +21,15 @@ export async function ensureProfile(): Promise<string | null> {
     .maybeSingle();
 
   if (!exist) {
-    const defaultHandle =
-      user.email?.split("@")[0] ?? `user_${user.id.slice(0, 6)}`;
     const display =
+      (user.user_metadata as any)?.display_name ??
       (user.user_metadata as any)?.name ??
       (user.user_metadata as any)?.full_name ??
-      defaultHandle;
+      "新米恐竜使い";
 
     // 作成（RLS の影響を受けるので policies は要確認）
     await supabase.from("profiles").insert({
       id: user.id,
-      handle: defaultHandle,
       display_name: display,
     });
   }
