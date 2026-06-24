@@ -1,4 +1,18 @@
 export type PersonaRarity = "common" | "rare" | "epic" | "legendary";
+export type PersonaAnimationStyle =
+  | "neon"
+  | "guard"
+  | "harmony"
+  | "mood"
+  | "chaos"
+  | "spark"
+  | "quest"
+  | "logic"
+  | "lunar"
+  | "nocturnal"
+  | "truth"
+  | "grow";
+export type PersonaMotionIntensity = "calm" | "normal" | "active";
 
 export type PersonaProfile = {
   key: string;
@@ -20,6 +34,8 @@ export type PersonaProfile = {
   silhouetteEmoji: string;
   iconEmoji: string;
   colorHint: string;
+  animationStyle: PersonaAnimationStyle;
+  motionIntensity: PersonaMotionIntensity;
 };
 
 export type PersonaCatalogEntry = PersonaProfile & {
@@ -55,6 +71,8 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
     silhouetteEmoji: "🦖",
     iconEmoji: "🦖✨",
     colorHint: "neon",
+    animationStyle: "neon",
+    motionIntensity: "active",
     theme: "social",
     vibe_tags: ["社交", "会話", "盛り上げ"],
     talk_style: "相手を巻き込むテンポの良い話し方",
@@ -83,6 +101,8 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
     silhouetteEmoji: "🦕",
     iconEmoji: "🦕🛡️",
     colorHint: "ocean",
+    animationStyle: "guard",
+    motionIntensity: "calm",
     theme: "social",
     vibe_tags: ["安心", "傾聴", "信頼"],
     talk_style: "相手の言葉を受け止めてから穏やかに返す",
@@ -111,6 +131,8 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
     silhouetteEmoji: "🦕",
     iconEmoji: "🦕🤝",
     colorHint: "harmony",
+    animationStyle: "harmony",
+    motionIntensity: "calm",
     theme: "social",
     vibe_tags: ["調整", "共感", "協力"],
     talk_style: "意見の違いをほぐしながら共通点を探す",
@@ -139,6 +161,8 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
     silhouetteEmoji: "🦕",
     iconEmoji: "🦕🎨",
     colorHint: "sunset",
+    animationStyle: "mood",
+    motionIntensity: "normal",
     theme: "social",
     vibe_tags: ["空気", "気遣い", "温度感"],
     talk_style: "場の空気を見て言葉の濃さを調整する",
@@ -167,6 +191,8 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
     silhouetteEmoji: "🦖",
     iconEmoji: "🦖💥",
     colorHint: "chaos",
+    animationStyle: "chaos",
+    motionIntensity: "active",
     theme: "chaos",
     vibe_tags: ["笑い", "勢い", "ボケ"],
     talk_style: "予想外の一言と軽いユーモアで展開する",
@@ -195,6 +221,8 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
     silhouetteEmoji: "🦖",
     iconEmoji: "🦖⚡",
     colorHint: "spark",
+    animationStyle: "spark",
+    motionIntensity: "active",
     theme: "chaos",
     vibe_tags: ["発想", "好奇心", "スピード"],
     talk_style: "思いついたアイデアを短くテンポ良く投げる",
@@ -223,6 +251,8 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
     silhouetteEmoji: "🦖",
     iconEmoji: "🦖❓",
     colorHint: "curiosity",
+    animationStyle: "quest",
+    motionIntensity: "normal",
     theme: "chaos",
     vibe_tags: ["質問", "ユーモア", "探究"],
     talk_style: "「なんで？」を楽しい角度から投げかける",
@@ -251,6 +281,8 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
     silhouetteEmoji: "🦖",
     iconEmoji: "🦖🧠",
     colorHint: "logic",
+    animationStyle: "logic",
+    motionIntensity: "normal",
     theme: "logic",
     vibe_tags: ["事実", "根拠", "比較"],
     talk_style: "根拠と結論を分けて端的に話す",
@@ -279,6 +311,8 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
     silhouetteEmoji: "🦕",
     iconEmoji: "🦕🌙",
     colorHint: "moon",
+    animationStyle: "lunar",
+    motionIntensity: "calm",
     theme: "logic",
     vibe_tags: ["戦略", "観察", "計画"],
     talk_style: "状況を整理し、次の一手を静かに提案する",
@@ -307,6 +341,8 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
     silhouetteEmoji: "🦕",
     iconEmoji: "🦕🔭",
     colorHint: "mist",
+    animationStyle: "nocturnal",
+    motionIntensity: "calm",
     theme: "logic",
     vibe_tags: ["深掘り", "静けさ", "内省"],
     talk_style: "急がず問いを深め、考えの輪郭を整える",
@@ -335,6 +371,8 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
     silhouetteEmoji: "🦖",
     iconEmoji: "🦖🏹",
     colorHint: "truth",
+    animationStyle: "truth",
+    motionIntensity: "normal",
     theme: "logic",
     vibe_tags: ["本質", "直球", "誠実"],
     talk_style: "論点を絞って、真っすぐに結論を届ける",
@@ -363,6 +401,8 @@ export const DEFAULT_PERSONA_CATALOG: readonly PersonaCatalogEntry[] = [
     silhouetteEmoji: "🦕",
     iconEmoji: "🦕🌱",
     colorHint: "growth",
+    animationStyle: "grow",
+    motionIntensity: "calm",
     theme: "social",
     vibe_tags: ["育成", "丁寧", "継続"],
     talk_style: "小さな変化を見つけて丁寧に言葉を返す",
@@ -398,6 +438,8 @@ const UNKNOWN_PERSONA_PROFILE: PersonaProfile = {
   silhouetteEmoji: "🥚",
   iconEmoji: "🦕❔",
   colorHint: "future",
+  animationStyle: "grow",
+  motionIntensity: "calm",
 };
 
 export function getPersonaProfile(key: string | null | undefined): PersonaProfile {
@@ -448,6 +490,8 @@ export function personaDisplayMetadata(key: string | null | undefined) {
     silhouetteEmoji: profile.silhouetteEmoji,
     iconEmoji: profile.iconEmoji,
     colorHint: profile.colorHint,
+    animationStyle: profile.animationStyle,
+    motionIntensity: profile.motionIntensity,
   };
 }
 
@@ -471,6 +515,8 @@ export function defaultPersonaArchetypes() {
     silhouetteEmoji: entry.silhouetteEmoji,
     iconEmoji: entry.iconEmoji,
     colorHint: entry.colorHint,
+    animationStyle: entry.animationStyle,
+    motionIntensity: entry.motionIntensity,
     image_url: entry.icon,
     theme: entry.theme,
     category: entry.category,

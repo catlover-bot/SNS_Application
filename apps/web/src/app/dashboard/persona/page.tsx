@@ -11,6 +11,7 @@ import PersonaEvolutionChart from "@/components/PersonaEvolutionChart";
 import SignedInDemoGuide from "@/components/SignedInDemoGuide";
 import { getPersonaProfile, personaDisplayName } from "@/lib/personaCatalog";
 import { getPersonaColorClasses, PersonaGameBadges } from "@/components/PersonaGameBadges";
+import AnimatedPersonaImage from "@/components/AnimatedPersonaImage";
 
 type Soulmate = {
   user_id: string;
@@ -97,37 +98,6 @@ function factorMaxPoints(key: PersonaScoreBreakdown["factors"][number]["key"]) {
   if (key === "ai_style") return 22;
   if (key === "consistency") return 18;
   return 10;
-}
-
-function DinosaurImage({
-  personaKey,
-  displayName,
-  fallbackEmoji,
-  className,
-}: {
-  personaKey: string;
-  displayName: string;
-  fallbackEmoji: string;
-  className: string;
-}) {
-  const [failed, setFailed] = useState(false);
-
-  if (failed) {
-    return (
-      <span className="flex h-full w-full items-center justify-center text-3xl" aria-label={displayName}>
-        {fallbackEmoji}
-      </span>
-    );
-  }
-
-  return (
-    <img
-      src={`/api/personas/image/${encodeURIComponent(personaKey)}`}
-      alt={displayName}
-      className={className}
-      onError={() => setFailed(true)}
-    />
-  );
 }
 
 export default function PersonaDashboardPage() {
@@ -319,14 +289,15 @@ export default function PersonaDashboardPage() {
               <article className={`rounded-xl border border-indigo-200 bg-gradient-to-br p-4 ${mainColor.card}`}>
                 <div className="text-xs font-semibold text-indigo-700">あなたのメイン恐竜</div>
                 <div className="mt-3 flex items-center gap-3">
-                  <div className={`h-24 w-24 shrink-0 overflow-hidden rounded-2xl border border-white/80 bg-white/80 shadow-sm ${mainColor.soft}`}>
-                    <DinosaurImage
-                      personaKey={mainPersona.persona_key}
-                      displayName={mainCharacterProfile?.displayName ?? "メイン恐竜"}
-                      fallbackEmoji={mainCharacterProfile?.iconEmoji ?? mainCharacterProfile?.silhouetteEmoji ?? "🦖"}
-                      className="h-full w-full object-contain"
-                    />
-                  </div>
+                  <AnimatedPersonaImage
+                    personaKey={mainPersona.persona_key}
+                    displayName={mainCharacterProfile?.displayName ?? "メイン恐竜"}
+                    iconEmoji={mainCharacterProfile?.iconEmoji}
+                    silhouetteEmoji={mainCharacterProfile?.silhouetteEmoji}
+                    variant="hero"
+                    motion="sparkle"
+                    className={`h-28 w-28 shrink-0 rounded-2xl border border-white/80 bg-white/80 shadow-sm ${mainColor.soft}`}
+                  />
                   <div className="min-w-0">
                     <div className="text-xl font-bold text-slate-950">
                       {mainCharacterProfile?.displayName}
@@ -435,14 +406,14 @@ export default function PersonaDashboardPage() {
                     return (
                       <article key={persona.persona_key} className={`rounded-xl border border-slate-200 bg-gradient-to-br p-3 ${color.card}`}>
                         <div className="flex items-center gap-2">
-                          <div className={`h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-white/80 bg-white/80 ${color.soft}`}>
-                            <DinosaurImage
-                              personaKey={persona.persona_key}
-                              displayName={characterProfile.displayName}
-                              fallbackEmoji={characterProfile.iconEmoji ?? characterProfile.silhouetteEmoji ?? "🦕"}
-                              className="h-full w-full object-contain"
-                            />
-                          </div>
+                          <AnimatedPersonaImage
+                            personaKey={persona.persona_key}
+                            displayName={characterProfile.displayName}
+                            iconEmoji={characterProfile.iconEmoji}
+                            silhouetteEmoji={characterProfile.silhouetteEmoji}
+                            variant="thumbnail"
+                            className={`h-14 w-14 shrink-0 rounded-xl border border-white/80 bg-white/80 ${color.soft}`}
+                          />
                           <div className="min-w-0">
                             <div className="truncate text-sm font-semibold text-slate-900">
                               {characterProfile.displayName}

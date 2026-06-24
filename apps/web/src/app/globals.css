@@ -5,3 +5,385 @@ html, body { min-height: 100%; }
 body { @apply bg-slate-50 text-slate-950 antialiased; }
 a { text-underline-offset: 3px; }
 ::selection { @apply bg-blue-100 text-blue-950; }
+
+/* Collectible dinosaur motion: transform/opacity only, with a static reduced-motion mode. */
+.persona-motion {
+  --persona-aura: 99 102 241;
+  --persona-aura-secondary: 56 189 248;
+  position: relative;
+  isolation: isolate;
+  display: block;
+  flex: none;
+  container-type: inline-size;
+}
+
+.persona-motion__aura,
+.persona-motion__ring,
+.persona-motion__sparkle {
+  pointer-events: none;
+  position: absolute;
+}
+
+.persona-motion__aura {
+  inset: 9%;
+  z-index: 0;
+  border-radius: 9999px;
+  background:
+    radial-gradient(circle at 38% 35%, rgb(var(--persona-aura) / 0.3), transparent 56%),
+    radial-gradient(circle at 68% 65%, rgb(var(--persona-aura-secondary) / 0.24), transparent 62%);
+  opacity: 0.65;
+  animation: persona-aura-breathe 6.8s ease-in-out infinite;
+}
+
+.persona-motion__ring {
+  inset: 14%;
+  z-index: 1;
+  border: 1px solid rgb(var(--persona-aura) / 0.28);
+  border-radius: 9999px;
+  opacity: 0.55;
+  animation: persona-ring-breathe 7.4s ease-in-out infinite;
+}
+
+.persona-motion__hover,
+.persona-motion__figure {
+  position: relative;
+  z-index: 2;
+  height: 100%;
+  width: 100%;
+}
+
+.persona-motion__hover {
+  transition: transform 240ms ease;
+}
+
+.persona-motion__figure {
+  transform-origin: 50% 76%;
+  will-change: transform;
+}
+
+.persona-motion__image,
+.persona-motion__fallback {
+  height: 100%;
+  width: 100%;
+  border-radius: inherit;
+}
+
+.persona-motion__image {
+  display: block;
+  object-fit: contain;
+  user-select: none;
+}
+
+.persona-motion__fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(2rem, 18cqw, 4.5rem);
+  line-height: 1;
+}
+
+.persona-motion__sparkle {
+  z-index: 3;
+  display: none;
+  color: rgb(var(--persona-aura));
+  opacity: 0;
+  text-shadow: 0 0 12px rgb(var(--persona-aura) / 0.55);
+  animation: persona-sparkle 5.4s ease-in-out infinite;
+}
+
+.persona-motion__sparkle--one {
+  right: 9%;
+  top: 13%;
+  font-size: 1rem;
+}
+
+.persona-motion__sparkle--two {
+  bottom: 20%;
+  left: 10%;
+  font-size: 1.4rem;
+  animation-delay: -2.7s;
+}
+
+.persona-motion--hero .persona-motion__aura {
+  inset: 2%;
+  opacity: 0.8;
+}
+
+.persona-motion--hero .persona-motion__ring {
+  inset: 8%;
+}
+
+.persona-motion--hero .persona-motion__sparkle,
+.persona-motion--intent-sparkle .persona-motion__sparkle,
+.persona-motion--neon .persona-motion__sparkle,
+.persona-motion--spark .persona-motion__sparkle,
+.persona-motion--quest .persona-motion__sparkle,
+.persona-motion--lunar .persona-motion__sparkle,
+.persona-motion--nocturnal .persona-motion__sparkle,
+.persona-motion--truth .persona-motion__sparkle {
+  display: block;
+}
+
+.persona-motion--thumbnail .persona-motion__aura {
+  inset: 12%;
+  opacity: 0.45;
+}
+
+.persona-motion--thumbnail .persona-motion__ring,
+.persona-motion--thumbnail .persona-motion__sparkle--two {
+  display: none;
+}
+
+.persona-motion--thumbnail .persona-motion__sparkle--one {
+  right: 2%;
+  top: 3%;
+  font-size: 0.65rem;
+}
+
+.persona-card:hover .persona-motion--card .persona-motion__hover,
+.persona-card:focus-visible .persona-motion--card .persona-motion__hover {
+  transform: scale(1.025);
+}
+
+.persona-motion--calm .persona-motion__figure {
+  animation-duration: 8.6s !important;
+}
+
+.persona-motion--active .persona-motion__figure {
+  animation-duration: 5.7s !important;
+}
+
+.persona-motion--intent-excited .persona-motion__figure {
+  animation-duration: 4.8s !important;
+}
+
+.persona-motion--intent-sleepy .persona-motion__figure {
+  animation-name: persona-motion-nocturnal !important;
+  animation-duration: 9.6s !important;
+}
+
+.persona-motion--intent-logic .persona-motion__figure {
+  animation-name: persona-motion-logic !important;
+}
+
+.persona-motion--intent-chaos .persona-motion__figure {
+  animation-name: persona-motion-chaos !important;
+}
+
+.persona-motion--intent-gentle .persona-motion__figure {
+  animation-name: persona-motion-harmony !important;
+  animation-duration: 8.8s !important;
+}
+
+.persona-motion--neon {
+  --persona-aura: 217 70 239;
+  --persona-aura-secondary: 34 211 238;
+}
+.persona-motion--neon .persona-motion__figure { animation: persona-motion-neon 6.2s ease-in-out infinite; }
+
+.persona-motion--guard {
+  --persona-aura: 14 165 233;
+  --persona-aura-secondary: 59 130 246;
+}
+.persona-motion--guard .persona-motion__figure { animation: persona-motion-guard 8.4s ease-in-out infinite; }
+
+.persona-motion--harmony {
+  --persona-aura: 16 185 129;
+  --persona-aura-secondary: 45 212 191;
+}
+.persona-motion--harmony .persona-motion__figure { animation: persona-motion-harmony 7.8s ease-in-out infinite; }
+
+.persona-motion--mood {
+  --persona-aura: 249 115 22;
+  --persona-aura-secondary: 244 63 94;
+}
+.persona-motion--mood .persona-motion__figure { animation: persona-motion-mood 7.1s ease-in-out infinite; }
+
+.persona-motion--chaos {
+  --persona-aura: 244 63 94;
+  --persona-aura-secondary: 139 92 246;
+}
+.persona-motion--chaos .persona-motion__figure { animation: persona-motion-chaos 6.4s ease-in-out infinite; }
+
+.persona-motion--spark {
+  --persona-aura: 245 158 11;
+  --persona-aura-secondary: 250 204 21;
+}
+.persona-motion--spark .persona-motion__figure { animation: persona-motion-spark 5.9s ease-in-out infinite; }
+
+.persona-motion--quest {
+  --persona-aura: 6 182 212;
+  --persona-aura-secondary: 99 102 241;
+}
+.persona-motion--quest .persona-motion__figure { animation: persona-motion-quest 7s ease-in-out infinite; }
+
+.persona-motion--logic {
+  --persona-aura: 59 130 246;
+  --persona-aura-secondary: 100 116 139;
+}
+.persona-motion--logic .persona-motion__figure { animation: persona-motion-logic 7.4s ease-in-out infinite; }
+
+.persona-motion--lunar {
+  --persona-aura: 99 102 241;
+  --persona-aura-secondary: 168 85 247;
+}
+.persona-motion--lunar .persona-motion__figure { animation: persona-motion-lunar 8.8s ease-in-out infinite; }
+
+.persona-motion--nocturnal {
+  --persona-aura: 100 116 139;
+  --persona-aura-secondary: 139 92 246;
+}
+.persona-motion--nocturnal .persona-motion__figure { animation: persona-motion-nocturnal 9.2s ease-in-out infinite; }
+
+.persona-motion--truth {
+  --persona-aura: 217 119 6;
+  --persona-aura-secondary: 250 204 21;
+}
+.persona-motion--truth .persona-motion__figure { animation: persona-motion-truth 7.2s ease-in-out infinite; }
+
+.persona-motion--grow {
+  --persona-aura: 101 163 13;
+  --persona-aura-secondary: 16 185 129;
+}
+.persona-motion--grow .persona-motion__figure { animation: persona-motion-grow 8.1s ease-in-out infinite; }
+
+.persona-motion--is-locked .persona-motion__figure {
+  animation: persona-motion-locked 7.6s ease-in-out infinite !important;
+}
+
+.persona-motion--is-locked .persona-motion__fallback {
+  opacity: 0.42;
+  filter: grayscale(1);
+}
+
+.persona-motion--is-locked .persona-motion__sparkle {
+  display: none;
+}
+
+.persona-signal-chip {
+  position: relative;
+  overflow: hidden;
+}
+
+.persona-signal-sparkle {
+  display: inline-block;
+  margin-right: 0.25rem;
+  color: rgb(37 99 235);
+  opacity: 0.65;
+  animation: persona-signal-glint 5.2s ease-in-out infinite;
+}
+
+@keyframes persona-aura-breathe {
+  0%, 100% { opacity: 0.48; transform: scale(0.96); }
+  50% { opacity: 0.78; transform: scale(1.04); }
+}
+
+@keyframes persona-ring-breathe {
+  0%, 100% { opacity: 0.24; transform: scale(0.96); }
+  50% { opacity: 0.6; transform: scale(1.035); }
+}
+
+@keyframes persona-sparkle {
+  0%, 62%, 100% { opacity: 0; transform: translateY(3px) scale(0.65) rotate(0deg); }
+  72% { opacity: 0.9; transform: translateY(-2px) scale(1) rotate(18deg); }
+  84% { opacity: 0; transform: translateY(-6px) scale(0.78) rotate(34deg); }
+}
+
+@keyframes persona-motion-neon {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-4px) scale(1.015); }
+}
+
+@keyframes persona-motion-guard {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.018, 0.992); }
+}
+
+@keyframes persona-motion-harmony {
+  0%, 100% { transform: translateY(0) rotate(-0.25deg); }
+  50% { transform: translateY(-5px) rotate(0.35deg); }
+}
+
+@keyframes persona-motion-mood {
+  0%, 100% { transform: translateY(0) rotate(-0.45deg); }
+  50% { transform: translateY(-3px) rotate(0.55deg); }
+}
+
+@keyframes persona-motion-chaos {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  24% { transform: translateY(-3px) rotate(-0.65deg); }
+  52% { transform: translateY(-1px) rotate(0.3deg); }
+  76% { transform: translateY(-4px) rotate(0.75deg); }
+}
+
+@keyframes persona-motion-spark {
+  0%, 100% { transform: translateY(0) rotate(-0.2deg); }
+  48% { transform: translateY(-6px) rotate(0.5deg); }
+}
+
+@keyframes persona-motion-quest {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  38% { transform: translateY(-3px) rotate(-0.8deg); }
+  68% { transform: translateY(-2px) rotate(0.65deg); }
+}
+
+@keyframes persona-motion-logic {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-2px) scale(1.012); }
+}
+
+@keyframes persona-motion-lunar {
+  0%, 100% { transform: translate(-1px, 0) rotate(-0.25deg); }
+  50% { transform: translate(2px, -4px) rotate(0.35deg); }
+}
+
+@keyframes persona-motion-nocturnal {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  50% { transform: translateY(-2px) scale(1.008, 0.988); }
+}
+
+@keyframes persona-motion-truth {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-2px) scale(1.018); }
+}
+
+@keyframes persona-motion-grow {
+  0%, 100% { transform: translateY(0) rotate(-0.2deg) scale(1); }
+  50% { transform: translateY(-3px) rotate(0.35deg) scale(1.012); }
+}
+
+@keyframes persona-motion-locked {
+  0%, 100% { opacity: 0.72; transform: scale(0.98); }
+  50% { opacity: 0.92; transform: scale(1.015); }
+}
+
+@keyframes persona-signal-glint {
+  0%, 72%, 100% { opacity: 0.42; transform: translateY(0) scale(0.9); }
+  80% { opacity: 1; transform: translateY(-1px) scale(1.08); }
+  90% { opacity: 0.55; transform: translateY(0) scale(0.96); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .persona-motion__aura,
+  .persona-motion__ring,
+  .persona-motion__sparkle,
+  .persona-motion__figure,
+  .persona-signal-sparkle {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .persona-motion__aura { opacity: 0.55; }
+  .persona-motion__ring { opacity: 0.35; }
+  .persona-motion__sparkle { opacity: 0.55; }
+  .persona-motion__hover { transition: none; }
+
+  .persona-card,
+  .persona-card:hover,
+  .persona-card:focus-visible,
+  .persona-card:hover .persona-motion__hover,
+  .persona-card:focus-visible .persona-motion__hover {
+    transform: none !important;
+    transition: none !important;
+  }
+}

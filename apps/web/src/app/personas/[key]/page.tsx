@@ -7,6 +7,7 @@ import Image from "next/image";
 import { buildPersonaPostingGuide, buildPersonaProfile } from "@sns/core";
 import { getPersonaProfile, personaDisplayName } from "@/lib/personaCatalog";
 import { getPersonaColorClasses, PersonaGameBadges } from "@/components/PersonaGameBadges";
+import AnimatedPersonaImage from "@/components/AnimatedPersonaImage";
 
 type PersonaDetail = {
   key: string;
@@ -355,23 +356,17 @@ export default function PersonaDetailPage() {
       )}
 
       {/* キャラヘッダー */}
-      <section className={`flex items-center gap-4 rounded-2xl border bg-gradient-to-br px-4 py-4 sm:px-6 sm:py-5 ${color.card}`}>
-        <div className="relative flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/80 bg-white/80 shadow-sm">
-          {iconInfo.isImage ? (
-            <PersonaIconImage
-              src={iconInfo.value}
-              alt={catalogProfile.displayName}
-              width={80}
-              height={80}
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <span className="text-2xl">{iconInfo.value}</span>
-          )}
-          <span className="absolute bottom-1 right-1 rounded-full bg-white/90 px-1.5 py-0.5 text-sm shadow-sm" aria-hidden="true">
-            {catalogProfile.iconEmoji}
-          </span>
-        </div>
+      <section className={`flex flex-col items-center gap-4 rounded-2xl border bg-gradient-to-br px-4 py-5 sm:flex-row sm:px-6 ${color.card}`}>
+        <AnimatedPersonaImage
+          personaKey={personaKey}
+          src={iconInfo.isImage ? iconInfo.value : undefined}
+          displayName={catalogProfile.displayName}
+          iconEmoji={iconInfo.isImage ? catalogProfile.iconEmoji : iconInfo.value}
+          silhouetteEmoji={catalogProfile.silhouetteEmoji}
+          variant="hero"
+          motion="sparkle"
+          className="h-36 w-36 shrink-0 rounded-3xl border border-white/80 bg-white/75 shadow-sm sm:h-40 sm:w-40"
+        />
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="truncate text-lg font-semibold sm:text-xl">
             {loadingPersona ? "読み込み中…" : catalogProfile.displayName}

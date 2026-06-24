@@ -5,6 +5,7 @@ export const revalidate = 0;
 import Link from "next/link";
 import { defaultPersonaArchetypes, getPersonaProfile } from "@/lib/personaCatalog";
 import { getPersonaColorClasses, PersonaGameBadges } from "@/components/PersonaGameBadges";
+import AnimatedPersonaImage from "@/components/AnimatedPersonaImage";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { supabaseServer } from "@/lib/supabase/server";
 
@@ -168,31 +169,38 @@ export default async function PersonasCatalogPage() {
                     const profile = getPersonaProfile(r.key);
                     const color = getPersonaColorClasses(r.key);
                     const isLocked = ownedPersonaKeys !== null && !ownedPersonaKeys.has(r.key);
-                    const src = `/api/personas/image/${encodeURIComponent(r.key)}?title=${encodeURIComponent(
-                      profile.displayName
-                    )}`;
                     return (
                       <Link
                         key={r.key}
                         href={`/personas/${encodeURIComponent(r.key)}`}
-                        className={`group block overflow-hidden rounded-2xl border bg-gradient-to-br ${color.card} transition hover:-translate-y-0.5 hover:shadow-lg ${
+                        className={`persona-card group block overflow-hidden rounded-2xl border bg-gradient-to-br ${color.card} transition hover:-translate-y-0.5 hover:shadow-lg focus-visible:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 ${
                           isLocked ? "border-dashed border-slate-300" : "border-slate-200"
                         }`}
                       >
                         <div className="relative aspect-[4/3] w-full overflow-hidden bg-white/70">
                           {isLocked ? (
                             <div className="flex h-full flex-col items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 text-slate-500">
-                              <span className="text-6xl grayscale opacity-35" aria-hidden="true">{profile.silhouetteEmoji}</span>
+                              <AnimatedPersonaImage
+                                personaKey={r.key}
+                                displayName={profile.displayName}
+                                iconEmoji={profile.iconEmoji}
+                                silhouetteEmoji={profile.silhouetteEmoji}
+                                variant="locked"
+                                locked
+                                className="h-28 w-28"
+                              />
                               <span className="mt-3 rounded-full border border-slate-300 bg-white/80 px-3 py-1 text-xs font-semibold">未発見</span>
                               <span className="mt-2 text-xs">まだ成長シグナルが足りません</span>
                             </div>
                           ) : (
                             <>
-                              <img
-                                src={src}
-                                alt={profile.displayName}
-                                loading="lazy"
-                                className="h-full w-full object-contain transition duration-300 group-hover:scale-[1.03]"
+                              <AnimatedPersonaImage
+                                personaKey={r.key}
+                                displayName={profile.displayName}
+                                iconEmoji={profile.iconEmoji}
+                                silhouetteEmoji={profile.silhouetteEmoji}
+                                variant="card"
+                                className="h-full w-full"
                               />
                               <span className="absolute left-3 top-3 rounded-full border border-white/70 bg-white/85 px-2 py-1 text-sm shadow-sm" aria-hidden="true">
                                 {profile.iconEmoji}
