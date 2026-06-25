@@ -9,6 +9,7 @@ import PersonaBadge from "@/components/PersonaBadge";
 import AiTimelineSummaryPanel from "@/components/AiTimelineSummaryPanel";
 import PersonaEvolutionChart from "@/components/PersonaEvolutionChart";
 import SignedInDemoGuide from "@/components/SignedInDemoGuide";
+import PersonaGrowthTabs from "@/components/PersonaGrowthTabs";
 import { getPersonaProfile, personaDisplayName } from "@/lib/personaCatalog";
 import { getPersonaColorClasses, PersonaGameBadges } from "@/components/PersonaGameBadges";
 import AnimatedPersonaImage from "@/components/AnimatedPersonaImage";
@@ -591,6 +592,14 @@ export default function PersonaDashboardPage() {
           </>
         )}
       </section>
+
+      <PersonaGrowthTabs
+        mainPersona={mainPersona}
+        subPersonas={subPersonas}
+        mainEvolution={mainEvolution}
+        mainBreakdown={mainBreakdown}
+        profileLoading={profileLoading}
+      />
 
       {/* 上段：レーダー + プロンプトバー + タイムラインAIサマリー */}
       <div className="grid gap-4 md:grid-cols-2">
