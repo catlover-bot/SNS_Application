@@ -5,6 +5,10 @@ function uniqueNonEmpty(values: string[]) {
 }
 
 export function getPersonaBaseImageSrc(personaKey: string): string {
+  return `/persona-images/${encodeURIComponent(personaKey)}.png`;
+}
+
+export function getPersonaImageApiSrc(personaKey: string): string {
   return `/api/personas/image/${encodeURIComponent(personaKey)}`;
 }
 
@@ -26,5 +30,6 @@ export function getPersonaImageCandidates(
   }
 
   candidates.push(getPersonaBaseImageSrc(personaKey));
+  candidates.push(getPersonaImageApiSrc(personaKey));
   return uniqueNonEmpty(candidates);
 }

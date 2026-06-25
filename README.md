@@ -90,7 +90,7 @@ pnpm dev
 - キャラインサイト `/api/me/persona-insights`（連続日数・直近モメンタム・内訳）
 - キャラクエスト `/api/me/persona-quests`（主キャラ継続 / 逆視点 / 相棒返信）
 - キャラ相性ラボ `/persona-lab`（相性比較・会話スターター・対話AI返信草案）
-- キャラ画像カバレッジ API `/api/personas/image-coverage`（静的画像/フォールバック可視化）
+- キャラ画像規約 API `/api/personas/image-coverage`（静的画像URL/進化段階URLの規約を返す軽量診断）
 - 相性API `/api/personas/compat` の理由拡張（次元スコア/強み/注意点/会話フック）
 - 対話AI: 返信先投稿本文を入力して文脈付き草案生成
 - キャラ性格プロファイル（口調/関係性/返信フック/注意点）を表示
