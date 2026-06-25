@@ -13,6 +13,7 @@ import { getPersonaProfile, personaDisplayName } from "@/lib/personaCatalog";
 import { getPersonaColorClasses, PersonaGameBadges } from "@/components/PersonaGameBadges";
 import AnimatedPersonaImage from "@/components/AnimatedPersonaImage";
 import PersonaEvolutionStages from "@/components/PersonaEvolutionStages";
+import PersonaEvolutionPreviewStrip from "@/components/PersonaEvolutionPreviewStrip";
 import {
   buildPersonaEvolutionProgress,
   type PersonaEvolutionProgress,
@@ -311,7 +312,13 @@ export default function PersonaDashboardPage() {
                     silhouetteEmoji={mainCharacterProfile?.silhouetteEmoji}
                     variant="hero"
                     motion="sparkle"
-                    className={`h-28 w-28 shrink-0 rounded-2xl border border-white/80 bg-white/80 shadow-sm ${mainColor.soft}`}
+                    className={`persona-current-form ${
+                      mainEvolution?.stage.key === "final"
+                        ? "persona-current-form--final"
+                        : (mainEvolution?.progressPercent ?? 0) >= 80
+                          ? "persona-current-form--near"
+                          : ""
+                    } h-28 w-28 shrink-0 rounded-2xl border border-white/80 bg-white/80 shadow-sm ${mainColor.soft}`}
                   />
                   <div className="min-w-0">
                     <div className="text-xl font-bold text-slate-950">
@@ -361,6 +368,14 @@ export default function PersonaDashboardPage() {
                       )}
                     </div>
                     <PersonaEvolutionStages progress={mainEvolution} compact className="mt-2" />
+                    <PersonaEvolutionPreviewStrip
+                      personaKey={mainPersona.persona_key}
+                      displayName={mainCharacterProfile?.displayName ?? "メイン恐竜"}
+                      currentStageKey={mainEvolution.stage.key}
+                      unlockedStages={mainEvolution.unlockedStages}
+                      variant="compact"
+                      className="mt-3"
+                    />
                     <div className="mt-3 flex items-center justify-between gap-3 text-xs">
                       <span className="font-semibold text-slate-700">進化ゲージ</span>
                       <span className="tabular-nums text-indigo-700">
@@ -513,6 +528,14 @@ export default function PersonaDashboardPage() {
                                 : "最終進化 100%"}
                             </span>
                           </div>
+                          <PersonaEvolutionPreviewStrip
+                            personaKey={persona.persona_key}
+                            displayName={characterProfile.displayName}
+                            currentStageKey={evolution.stage.key}
+                            unlockedStages={evolution.unlockedStages}
+                            variant="compact"
+                            className="mt-1.5"
+                          />
                           <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-indigo-100">
                             <div
                               className="h-full rounded-full bg-indigo-500"

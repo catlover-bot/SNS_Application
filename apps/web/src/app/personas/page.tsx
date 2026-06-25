@@ -6,7 +6,7 @@ import Link from "next/link";
 import { defaultPersonaArchetypes, getPersonaProfile } from "@/lib/personaCatalog";
 import { getPersonaColorClasses, PersonaGameBadges } from "@/components/PersonaGameBadges";
 import AnimatedPersonaImage from "@/components/AnimatedPersonaImage";
-import PersonaEvolutionStages from "@/components/PersonaEvolutionStages";
+import PersonaEvolutionPreviewStrip from "@/components/PersonaEvolutionPreviewStrip";
 import {
   buildPersonaEvolutionProgress,
   type PersonaEvolutionProgress,
@@ -195,6 +195,7 @@ export default async function PersonasCatalogPage() {
                     const color = getPersonaColorClasses(r.key);
                     const isLocked = ownedPersonaKeys !== null && !ownedPersonaKeys.has(r.key);
                     const evolution = ownedPersonaEvolution.get(r.key) ?? null;
+                    const cardStageKey = evolution?.stage.key ?? "discovery";
                     return (
                       <Link
                         key={r.key}
@@ -205,25 +206,26 @@ export default async function PersonasCatalogPage() {
                       >
                         <div className="relative aspect-[4/3] w-full overflow-hidden bg-white/70">
                           {isLocked ? (
-                            <div className="flex h-full flex-col items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 text-slate-500">
+                            <div className="relative flex h-full flex-col items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 text-slate-500">
                               <AnimatedPersonaImage
                                 personaKey={r.key}
-                                stageKey="discovery"
+                                stageKey={cardStageKey}
                                 displayName={profile.displayName}
                                 iconEmoji={profile.iconEmoji}
                                 silhouetteEmoji={profile.silhouetteEmoji}
-                                variant="locked"
-                                locked
-                                className="h-28 w-28"
+                                variant="card"
+                                className="h-full w-full opacity-70 grayscale-[0.25]"
                               />
-                              <span className="mt-3 rounded-full border border-slate-300 bg-white/80 px-3 py-1 text-xs font-semibold">未発見</span>
-                              <span className="mt-2 text-xs">まだ成長シグナルが足りません</span>
+                              <div className="absolute inset-x-3 bottom-3 rounded-2xl border border-slate-300 bg-white/85 p-3 text-center shadow-sm backdrop-blur">
+                                <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold">未発見</span>
+                                <span className="mt-2 block text-xs">まだ成長シグナルが足りません</span>
+                              </div>
                             </div>
                           ) : (
                             <>
                               <AnimatedPersonaImage
                                 personaKey={r.key}
-                                stageKey="discovery"
+                                stageKey={cardStageKey}
                                 displayName={profile.displayName}
                                 iconEmoji={profile.iconEmoji}
                                 silhouetteEmoji={profile.silhouetteEmoji}
@@ -251,12 +253,15 @@ export default async function PersonasCatalogPage() {
                           />
                           <div className="mt-2 rounded-xl border border-white/80 bg-white/70 p-2">
                             <div className="text-[11px] font-semibold text-slate-700">
-                              {evolution ? `現在の進化段階: ${evolution.stage.label}` : "4つの進化段階"}
+                              {evolution ? `現在の進化段階: ${evolution.stage.label}` : "4つの進化形態"}
                             </div>
-                            <PersonaEvolutionStages
-                              progress={evolution}
-                              preview={!evolution}
-                              compact
+                            <PersonaEvolutionPreviewStrip
+                              personaKey={r.key}
+                              displayName={profile.displayName}
+                              currentStageKey={evolution?.stage.key}
+                              unlockedStages={evolution?.unlockedStages}
+                              variant="strip"
+                              interactive
                               className="mt-1.5"
                             />
                           </div>

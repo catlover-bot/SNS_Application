@@ -8,10 +8,9 @@ import { buildPersonaPostingGuide, buildPersonaProfile } from "@sns/core";
 import { getPersonaProfile, personaDisplayName } from "@/lib/personaCatalog";
 import { getPersonaColorClasses, PersonaGameBadges } from "@/components/PersonaGameBadges";
 import AnimatedPersonaImage from "@/components/AnimatedPersonaImage";
-import PersonaEvolutionStages from "@/components/PersonaEvolutionStages";
+import PersonaEvolutionPreviewStrip from "@/components/PersonaEvolutionPreviewStrip";
 import {
   buildPersonaEvolutionProgress,
-  PERSONA_EVOLUTION_STAGES,
   type PersonaEvolutionProgress,
 } from "@/lib/personaEvolution";
 
@@ -492,38 +491,14 @@ export default function PersonaDetailPage() {
         <p className="mt-2 text-sm leading-6 text-slate-600">
           この恐竜は、投稿傾向が積み重なるほど同じ個性のまま進化します。別の恐竜へ置き換わる仕組みではありません。
         </p>
-        <PersonaEvolutionStages progress={ownedEvolution} preview={!ownedEvolution} className="mt-3" />
-        <ol className="mt-4 grid gap-2 sm:grid-cols-2">
-          {PERSONA_EVOLUTION_STAGES.map((stage) => (
-            <li key={stage.key} className="rounded-xl border border-white bg-white/80 p-3 shadow-sm">
-              <div className="flex gap-3">
-                <AnimatedPersonaImage
-                  personaKey={personaKey}
-                  stageKey={stage.key}
-                  displayName={`${catalogProfile.displayName} ${stage.label}`}
-                  iconEmoji={catalogProfile.iconEmoji}
-                  silhouetteEmoji={catalogProfile.silhouetteEmoji}
-                  variant="thumbnail"
-                  motion="idle"
-                  className="h-16 w-16 shrink-0 rounded-2xl border border-indigo-100 bg-indigo-50"
-                />
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-xs font-bold text-indigo-700">
-                      Lv.{stage.level} {stage.label}
-                    </span>
-                    {ownedEvolution?.stage.key === stage.key && (
-                      <span className="rounded-full border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700">
-                        現在
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-1 text-xs leading-5 text-slate-600">{stage.description}</p>
-                </div>
-              </div>
-            </li>
-          ))}
-        </ol>
+        <PersonaEvolutionPreviewStrip
+          personaKey={personaKey}
+          displayName={catalogProfile.displayName}
+          currentStageKey={ownedEvolution?.stage.key}
+          unlockedStages={ownedEvolution?.unlockedStages}
+          variant="showcase"
+          className="mt-4"
+        />
         <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
           <div className="text-xs font-semibold text-amber-900">この恐竜を育てるヒント</div>
           <p className="mt-1 text-sm leading-6 text-amber-950">{catalogProfile.evolutionHint}</p>
