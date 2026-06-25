@@ -12,6 +12,11 @@ import SignedInDemoGuide from "@/components/SignedInDemoGuide";
 import { getPersonaProfile, personaDisplayName } from "@/lib/personaCatalog";
 import { getPersonaColorClasses, PersonaGameBadges } from "@/components/PersonaGameBadges";
 import AnimatedPersonaImage from "@/components/AnimatedPersonaImage";
+import PersonaEvolutionStages from "@/components/PersonaEvolutionStages";
+import {
+  buildPersonaEvolutionProgress,
+  type PersonaEvolutionProgress,
+} from "@/lib/personaEvolution";
 
 type Soulmate = {
   user_id: string;
@@ -78,6 +83,7 @@ type PersonaScoreBreakdown = {
   }>;
   reason: string;
   recentSignals: string[];
+  evolution: PersonaEvolutionProgress;
 };
 
 type PersonaProfileResponse = {
@@ -170,6 +176,14 @@ export default function PersonaDashboardPage() {
   const mainCharacterProfile = mainPersona ? getPersonaProfile(mainPersona.persona_key) : null;
   const mainColor = getPersonaColorClasses(mainPersona?.persona_key);
   const mainBreakdown = mainPersona ? breakdownsByKey.get(mainPersona.persona_key) : null;
+  const mainEvolution = mainPersona
+    ? mainBreakdown?.evolution ??
+      buildPersonaEvolutionProgress({
+        personaKey: mainPersona.persona_key,
+        score: mainBreakdown?.totalScore ?? mainPersona.score,
+        confidence: mainBreakdown?.confidence ?? mainPersona.confidence,
+      })
+    : null;
   const subPersonas = profile?.personas?.slice(1, 4) ?? [];
 
   useEffect(() => {
@@ -291,6 +305,7 @@ export default function PersonaDashboardPage() {
                 <div className="mt-3 flex items-center gap-3">
                   <AnimatedPersonaImage
                     personaKey={mainPersona.persona_key}
+                    stageKey={mainEvolution?.stage.key}
                     displayName={mainCharacterProfile?.displayName ?? "メイン恐竜"}
                     iconEmoji={mainCharacterProfile?.iconEmoji}
                     silhouetteEmoji={mainCharacterProfile?.silhouetteEmoji}
@@ -305,7 +320,11 @@ export default function PersonaDashboardPage() {
                     <div className="text-xs font-medium text-indigo-700">{mainCharacterProfile?.title}</div>
                   </div>
                 </div>
-                <PersonaGameBadges personaKey={mainPersona.persona_key} className="mt-3" />
+                <PersonaGameBadges
+                  personaKey={mainPersona.persona_key}
+                  evolutionStageLabel={mainEvolution?.stage.label}
+                  className="mt-3"
+                />
                 <p className="mt-3 text-sm leading-6 text-slate-700">
                   {mainCharacterProfile?.shortSummary}
                 </p>
@@ -316,6 +335,58 @@ export default function PersonaDashboardPage() {
                     </span>
                   ))}
                 </div>
+                {mainEvolution && (
+                  <div
+                    className={`persona-evolution-panel mt-4 rounded-xl border border-indigo-200 bg-white/85 p-3 ${
+                      mainEvolution.stage.key === "final"
+                        ? "persona-evolution-panel--final"
+                        : mainEvolution.progressPercent >= 80
+                          ? "persona-evolution-panel--near"
+                          : ""
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-indigo-600">
+                          進化段階
+                        </div>
+                        <div className="text-sm font-bold text-slate-900">
+                          {mainCharacterProfile?.displayName} {mainEvolution.stage.label}
+                        </div>
+                      </div>
+                      {mainEvolution.stage.key === "final" && (
+                        <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800">
+                          ✦ 最終進化達成
+                        </span>
+                      )}
+                    </div>
+                    <PersonaEvolutionStages progress={mainEvolution} compact className="mt-2" />
+                    <div className="mt-3 flex items-center justify-between gap-3 text-xs">
+                      <span className="font-semibold text-slate-700">進化ゲージ</span>
+                      <span className="tabular-nums text-indigo-700">
+                        {mainEvolution.nextStage
+                          ? `${mainEvolution.nextStage.label}まで ${mainEvolution.progressPercent}%`
+                          : "進化完了 100%"}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 h-2.5 overflow-hidden rounded-full bg-indigo-100">
+                      <div
+                        className="persona-evolution-meter h-full rounded-full bg-gradient-to-r from-indigo-500 to-fuchsia-500"
+                        style={{ width: `${mainEvolution.progressPercent}%` }}
+                      />
+                    </div>
+                    <p className="mt-2 text-xs leading-5 text-slate-600">
+                      {mainEvolution.nextRequirementText}
+                    </p>
+                    {mainEvolution.remainingHints.length > 0 && (
+                      <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[11px] leading-5 text-slate-500">
+                        {mainEvolution.remainingHints.slice(0, 3).map((hint) => (
+                          <li key={hint}>{hint}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
                 <div className="mt-4 grid grid-cols-2 gap-2">
                   <div className="rounded-lg border border-indigo-100 bg-white p-3">
                     <div className="text-xs text-slate-500">キャラスコア</div>
@@ -403,11 +474,18 @@ export default function PersonaDashboardPage() {
                     const characterProfile = getPersonaProfile(persona.persona_key);
                     const color = getPersonaColorClasses(persona.persona_key);
                     const breakdown = breakdownsByKey.get(persona.persona_key);
+                    const evolution = breakdown?.evolution ??
+                      buildPersonaEvolutionProgress({
+                        personaKey: persona.persona_key,
+                        score: breakdown?.totalScore ?? persona.score,
+                        confidence: breakdown?.confidence ?? persona.confidence,
+                      });
                     return (
                       <article key={persona.persona_key} className={`rounded-xl border border-slate-200 bg-gradient-to-br p-3 ${color.card}`}>
                         <div className="flex items-center gap-2">
                           <AnimatedPersonaImage
                             personaKey={persona.persona_key}
+                            stageKey={evolution.stage.key}
                             displayName={characterProfile.displayName}
                             iconEmoji={characterProfile.iconEmoji}
                             silhouetteEmoji={characterProfile.silhouetteEmoji}
@@ -421,7 +499,27 @@ export default function PersonaDashboardPage() {
                             <div className="text-xs text-slate-500">{characterProfile.title}</div>
                           </div>
                         </div>
-                        <PersonaGameBadges personaKey={persona.persona_key} className="mt-2" />
+                        <PersonaGameBadges
+                          personaKey={persona.persona_key}
+                          evolutionStageLabel={evolution.stage.label}
+                          className="mt-2"
+                        />
+                        <div className="mt-2 rounded-lg border border-indigo-100 bg-white/75 p-2">
+                          <div className="flex items-center justify-between gap-2 text-[11px]">
+                            <span className="font-semibold text-slate-700">{evolution.stage.label}</span>
+                            <span className="tabular-nums text-indigo-700">
+                              {evolution.nextStage
+                                ? `${evolution.nextStage.shortLabel}まで ${evolution.progressPercent}%`
+                                : "最終進化 100%"}
+                            </span>
+                          </div>
+                          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-indigo-100">
+                            <div
+                              className="h-full rounded-full bg-indigo-500"
+                              style={{ width: `${evolution.progressPercent}%` }}
+                            />
+                          </div>
+                        </div>
                         <p className="mt-2 text-xs leading-5 text-slate-600">{characterProfile.shortSummary}</p>
                         <div className="mt-2 flex flex-wrap gap-1">
                           {characterProfile.traits.slice(0, 3).map((trait) => (

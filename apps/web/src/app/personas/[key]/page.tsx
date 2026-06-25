@@ -8,6 +8,12 @@ import { buildPersonaPostingGuide, buildPersonaProfile } from "@sns/core";
 import { getPersonaProfile, personaDisplayName } from "@/lib/personaCatalog";
 import { getPersonaColorClasses, PersonaGameBadges } from "@/components/PersonaGameBadges";
 import AnimatedPersonaImage from "@/components/AnimatedPersonaImage";
+import PersonaEvolutionStages from "@/components/PersonaEvolutionStages";
+import {
+  buildPersonaEvolutionProgress,
+  PERSONA_EVOLUTION_STAGES,
+  type PersonaEvolutionProgress,
+} from "@/lib/personaEvolution";
 
 type PersonaDetail = {
   key: string;
@@ -49,6 +55,20 @@ type CompatApiResponse = {
     relationStyle: string | null;
     vibeTags?: string[] | null;
   }[];
+};
+
+type OwnedPersonaProfileResponse = {
+  personas?: Array<{
+    persona_key: string;
+    score: number | null;
+    confidence: number | null;
+  }>;
+  breakdowns?: Array<{
+    personaKey: string;
+    totalScore: number;
+    confidence: number;
+    evolution?: PersonaEvolutionProgress;
+  }>;
 };
 
 const MODE_LABEL: Record<Mode, string> = {
@@ -180,6 +200,7 @@ export default function PersonaDetailPage() {
   });
   const [compatError, setCompatError] = useState<string | null>(null);
   const [loadingCompat, setLoadingCompat] = useState(false);
+  const [ownedEvolution, setOwnedEvolution] = useState<PersonaEvolutionProgress | null>(null);
 
   // --- キャラ詳細の取得（自分自身：persona_defs から） ---
   useEffect(() => {
@@ -204,6 +225,43 @@ export default function PersonaDetailPage() {
         setPersona(null);
       } finally {
         if (alive) setLoadingPersona(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [personaKey]);
+
+  useEffect(() => {
+    let alive = true;
+    setOwnedEvolution(null);
+
+    (async () => {
+      try {
+        const res = await fetch("/api/me/persona_profile", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = (await res.json().catch(() => null)) as OwnedPersonaProfileResponse | null;
+        if (!alive || !data) return;
+
+        const breakdown = (data.breakdowns ?? []).find((item) => item.personaKey === personaKey);
+        if (breakdown?.evolution?.stage?.key) {
+          setOwnedEvolution(breakdown.evolution);
+          return;
+        }
+
+        const personaRow = (data.personas ?? []).find((item) => item.persona_key === personaKey);
+        if (personaRow) {
+          setOwnedEvolution(
+            buildPersonaEvolutionProgress({
+              personaKey,
+              score: personaRow.score,
+              confidence: personaRow.confidence,
+            })
+          );
+        }
+      } catch {
+        // Public detail pages still work when the viewer is signed out.
       }
     })();
 
@@ -291,6 +349,7 @@ export default function PersonaDetailPage() {
   const catalogProfile = useMemo(() => getPersonaProfile(personaKey), [personaKey]);
   const color = getPersonaColorClasses(personaKey);
   const iconInfo = resolveIcon(persona?.icon, personaKey, catalogProfile.displayName);
+  const detailHeroStageKey = ownedEvolution?.stage.key ?? "discovery";
   const profile = useMemo(
     () =>
       buildPersonaProfile({
@@ -359,7 +418,7 @@ export default function PersonaDetailPage() {
       <section className={`flex flex-col items-center gap-4 rounded-2xl border bg-gradient-to-br px-4 py-5 sm:flex-row sm:px-6 ${color.card}`}>
         <AnimatedPersonaImage
           personaKey={personaKey}
-          src={iconInfo.isImage ? iconInfo.value : undefined}
+          stageKey={detailHeroStageKey}
           displayName={catalogProfile.displayName}
           iconEmoji={iconInfo.isImage ? catalogProfile.iconEmoji : iconInfo.value}
           silhouetteEmoji={catalogProfile.silhouetteEmoji}
@@ -373,7 +432,7 @@ export default function PersonaDetailPage() {
           </div>
           <div className="text-sm font-medium text-blue-700">{catalogProfile.title}</div>
           {catalogProfile.speciesName && <div className="text-xs text-slate-500">{catalogProfile.speciesName}</div>}
-          <PersonaGameBadges personaKey={personaKey} />
+          <PersonaGameBadges personaKey={personaKey} showEvolutionStage={false} />
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center rounded-full border bg-slate-50 px-2 py-0.5 text-[11px] text-slate-700">
               {themeLabel(persona?.theme)}
@@ -420,9 +479,55 @@ export default function PersonaDetailPage() {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 sm:px-6 sm:py-4">
-        <div className="text-xs font-semibold text-amber-900">進化ヒント</div>
-        <p className="mt-1 text-sm leading-6 text-amber-950">{catalogProfile.evolutionHint}</p>
+      <section className="rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50 via-white to-violet-50 px-4 py-4 sm:px-6 sm:py-5">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">Evolution forms</div>
+            <h2 className="mt-1 text-lg font-bold text-slate-950">進化段階</h2>
+          </div>
+          <span className="rounded-full border border-violet-200 bg-white px-3 py-1 text-xs font-semibold text-violet-700">
+            1体 × 4段階
+          </span>
+        </div>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          この恐竜は、投稿傾向が積み重なるほど同じ個性のまま進化します。別の恐竜へ置き換わる仕組みではありません。
+        </p>
+        <PersonaEvolutionStages progress={ownedEvolution} preview={!ownedEvolution} className="mt-3" />
+        <ol className="mt-4 grid gap-2 sm:grid-cols-2">
+          {PERSONA_EVOLUTION_STAGES.map((stage) => (
+            <li key={stage.key} className="rounded-xl border border-white bg-white/80 p-3 shadow-sm">
+              <div className="flex gap-3">
+                <AnimatedPersonaImage
+                  personaKey={personaKey}
+                  stageKey={stage.key}
+                  displayName={`${catalogProfile.displayName} ${stage.label}`}
+                  iconEmoji={catalogProfile.iconEmoji}
+                  silhouetteEmoji={catalogProfile.silhouetteEmoji}
+                  variant="thumbnail"
+                  motion="idle"
+                  className="h-16 w-16 shrink-0 rounded-2xl border border-indigo-100 bg-indigo-50"
+                />
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs font-bold text-indigo-700">
+                      Lv.{stage.level} {stage.label}
+                    </span>
+                    {ownedEvolution?.stage.key === stage.key && (
+                      <span className="rounded-full border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700">
+                        現在
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-slate-600">{stage.description}</p>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ol>
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+          <div className="text-xs font-semibold text-amber-900">この恐竜を育てるヒント</div>
+          <p className="mt-1 text-sm leading-6 text-amber-950">{catalogProfile.evolutionHint}</p>
+        </div>
       </section>
 
       <section className="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 sm:px-6 sm:py-4">

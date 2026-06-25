@@ -6,7 +6,21 @@ PersonaLens is not a per-post character assignment app. Each post contributes AI
 
 User-facing dinosaur names and Japanese character profiles live in `src/lib/personaCatalog.ts`. Persisted keys, URL slugs, and `analysis.persona.*` remain stable for compatibility; UI code should resolve display metadata by key instead of showing raw keys.
 
-The public dinosaur encyclopedia previews all 12 characters. Signed-in users also see schema-free discovery states based on existing `user_personas` rows, with rarity, element, evolution stage, traits, growth signals, and evolution hints—no additional migration required.
+The public dinosaur encyclopedia previews all 12 characters and each character's four maturity stages: discovery, growth, awakening, and final evolution. Together they form 48 collectible forms without adding or renaming base personas. Signed-in users also see schema-free discovery and evolution states computed from existing `user_personas`, post, AI-score, and reaction signals—no additional migration required.
+
+Evolution-stage persona images use the existing flat public image directory:
+
+```text
+apps/web/public/persona-images/{persona_key}_{stage}.png
+```
+
+Stage suffixes are `discovery`, `growth`, `awakening`, and `final`; for example:
+
+```text
+apps/web/public/persona-images/afterparty_host_growth.png
+```
+
+If a stage-specific image is missing, the UI falls back to the existing base persona image at `/api/personas/image/{persona_key}`, then to the configured emoji fallback.
 
 ## Development
 

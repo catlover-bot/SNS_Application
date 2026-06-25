@@ -4,7 +4,9 @@ Supabase をバックエンドにした SNS アプリのモノレポです。
 `apps/web` は Next.js、`apps/mobile` は Expo (React Native) で実装しています。
 
 PersonaLens は、投稿ごとの AI 判定を材料に、ユーザー自身の恐竜キャラが育っていく SNS です。各投稿はキャラを直接決めるのではなく、成長シグナルとして蓄積されます。
-PersonaLens では、投稿のクセを AI が読み取り、12体の恐竜キャラのいずれかがユーザーの中で育っていきます。恐竜図鑑では、各恐竜の特徴・育ちやすい投稿・レアリティ・進化段階・進化ヒントを確認できます。
+PersonaLens では、投稿のクセを AI が読み取り、12体の恐竜キャラのいずれかがユーザーの中で育っていきます。投稿ごとのAI判定は恐竜を直接決めるものではなく、進化のための成長シグナルとして蓄積されます。
+各恐竜には「発見期」「成長期」「覚醒期」「最終進化」の4段階があり、12体 × 4進化段階で48形態のコレクション性を表現します。恐竜図鑑では、各恐竜の特徴・育ちやすい投稿・レアリティ・進化段階・進化ヒントを確認できます。
+進化段階ごとの恐竜画像は `apps/web/public/persona-images/{persona_key}_{stage}.png` に配置します。例: `apps/web/public/persona-images/afterparty_host_growth.png`。ステージ接尾辞は `discovery` / `growth` / `awakening` / `final` です。段階別画像がない場合、UI は既存のベース画像 `/api/personas/image/{persona_key}` にフォールバックします。
 
 ## 恐竜キャラ
 

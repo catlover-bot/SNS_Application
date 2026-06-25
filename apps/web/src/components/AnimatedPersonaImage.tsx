@@ -1,10 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   getPersonaProfile,
   type PersonaAnimationStyle,
 } from "@/lib/personaCatalog";
+import type { PersonaEvolutionStageKey } from "@/lib/personaEvolution";
+import { getPersonaBaseImageSrc, getPersonaImageCandidates } from "@/lib/personaImages";
 
 export type PersonaImageVariant = "hero" | "card" | "thumbnail" | "locked";
 export type PersonaMotion =
@@ -19,6 +21,8 @@ export type PersonaMotion =
 type Props = {
   personaKey?: string;
   src?: string;
+  imageCandidates?: string[];
+  stageKey?: PersonaEvolutionStageKey;
   displayName: string;
   iconEmoji?: string;
   silhouetteEmoji?: string;
@@ -42,6 +46,8 @@ function joinClasses(...values: Array<string | false | null | undefined>) {
 export default function AnimatedPersonaImage({
   personaKey,
   src,
+  imageCandidates,
+  stageKey,
   displayName,
   iconEmoji,
   silhouetteEmoji,
@@ -50,13 +56,31 @@ export default function AnimatedPersonaImage({
   locked = false,
   className = "",
 }: Props) {
-  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const profile = useMemo(() => getPersonaProfile(personaKey), [personaKey]);
   const animationStyle =
     profile.animationStyle ?? MOTION_STYLE_FALLBACK[motion] ?? "harmony";
-  const resolvedSrc =
-    src?.trim() ||
-    (personaKey ? `/api/personas/image/${encodeURIComponent(personaKey)}` : "");
+  const candidateImages = useMemo(() => {
+    const rawCandidates =
+      imageCandidates && imageCandidates.length > 0
+        ? imageCandidates
+        : src?.trim()
+          ? [src]
+          : personaKey && stageKey
+            ? getPersonaImageCandidates(personaKey, stageKey)
+            : personaKey
+              ? [getPersonaBaseImageSrc(personaKey)]
+              : [];
+
+    return Array.from(
+      new Set(rawCandidates.map((candidate) => candidate.trim()).filter(Boolean))
+    );
+  }, [imageCandidates, personaKey, src, stageKey]);
+  const candidateKey = candidateImages.join("\n");
+  useEffect(() => {
+    setCurrentImageIndex(0);
+  }, [candidateKey]);
+  const resolvedSrc = candidateImages[currentImageIndex] ?? "";
   const fallbackEmoji =
     iconEmoji?.trim() ||
     profile.iconEmoji ||
@@ -66,7 +90,7 @@ export default function AnimatedPersonaImage({
   const lockedEmoji =
     silhouetteEmoji?.trim() || profile.silhouetteEmoji || fallbackEmoji;
   const accessibleName = displayName.trim() || "恐竜キャラ";
-  const showImage = !locked && Boolean(resolvedSrc) && failedSrc !== resolvedSrc;
+  const showImage = !locked && Boolean(resolvedSrc);
 
   return (
     <div
@@ -97,7 +121,11 @@ export default function AnimatedPersonaImage({
               loading={variant === "hero" ? "eager" : "lazy"}
               draggable={false}
               className="persona-motion__image"
-              onError={() => setFailedSrc(resolvedSrc)}
+              onError={() => {
+                setCurrentImageIndex((index) =>
+                  candidateImages[index] === resolvedSrc ? index + 1 : index
+                );
+              }}
             />
           ) : (
             <span

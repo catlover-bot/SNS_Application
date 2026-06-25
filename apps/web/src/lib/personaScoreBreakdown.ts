@@ -1,4 +1,8 @@
 import { getPersonaProfile } from "@/lib/personaCatalog";
+import {
+  buildPersonaEvolutionProgress,
+  type PersonaEvolutionProgress,
+} from "@/lib/personaEvolution";
 
 export type PersonaScoreFactor = {
   key: "persona_match" | "ai_style" | "consistency" | "reactions" | "recency";
@@ -14,6 +18,7 @@ export type PersonaScoreBreakdown = {
   factors: PersonaScoreFactor[];
   reason: string;
   recentSignals: string[];
+  evolution: PersonaEvolutionProgress;
 };
 
 type PersonaRow = {
@@ -331,6 +336,12 @@ export function buildPersonaScoreBreakdowns(args: {
       factors,
       reason,
       recentSignals: recentSignals.slice(0, 4),
+      evolution: buildPersonaEvolutionProgress({
+        personaKey,
+        score: totalScore,
+        confidence,
+        matchingSignals: matchingPosts,
+      }),
     };
   });
 }

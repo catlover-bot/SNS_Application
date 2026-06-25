@@ -35,9 +35,13 @@ export function getPersonaColorClasses(personaKey: string | null | undefined) {
 export function PersonaGameBadges({
   personaKey,
   className = "",
+  evolutionStageLabel,
+  showEvolutionStage = true,
 }: {
   personaKey: string | null | undefined;
   className?: string;
+  evolutionStageLabel?: string | null;
+  showEvolutionStage?: boolean;
 }) {
   const profile = getPersonaProfile(personaKey);
   return (
@@ -45,9 +49,11 @@ export function PersonaGameBadges({
       <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${RARITY_CLASSES[profile.rarity]}`}>
         {PERSONA_RARITY_LABELS[profile.rarity]}
       </span>
-      <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700">
-        {profile.evolutionStageName}
-      </span>
+      {showEvolutionStage && (
+        <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700">
+          {evolutionStageLabel ?? profile.evolutionStageName}
+        </span>
+      )}
       <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
         {profile.element}
       </span>

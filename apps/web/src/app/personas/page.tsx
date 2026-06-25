@@ -6,6 +6,11 @@ import Link from "next/link";
 import { defaultPersonaArchetypes, getPersonaProfile } from "@/lib/personaCatalog";
 import { getPersonaColorClasses, PersonaGameBadges } from "@/components/PersonaGameBadges";
 import AnimatedPersonaImage from "@/components/AnimatedPersonaImage";
+import PersonaEvolutionStages from "@/components/PersonaEvolutionStages";
+import {
+  buildPersonaEvolutionProgress,
+  type PersonaEvolutionProgress,
+} from "@/lib/personaEvolution";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { supabaseServer } from "@/lib/supabase/server";
 
@@ -26,6 +31,7 @@ export default async function PersonasCatalogPage() {
   let items: Item[] = [];
   let hasError = false;
   let ownedPersonaKeys: Set<string> | null = null;
+  let ownedPersonaEvolution = new Map<string, PersonaEvolutionProgress>();
 
   if (isSupabaseConfigured()) {
     try {
@@ -45,7 +51,7 @@ export default async function PersonasCatalogPage() {
       if (user) {
         const ownedRes = await supa
           .from("user_personas")
-          .select("persona_key")
+          .select("persona_key,score,confidence")
           .eq("user_id", user.id)
           .limit(100);
         if (!ownedRes.error) {
@@ -53,6 +59,22 @@ export default async function PersonasCatalogPage() {
             (ownedRes.data ?? [])
               .map((row: any) => String(row?.persona_key ?? "").trim())
               .filter(Boolean)
+          );
+          ownedPersonaEvolution = new Map(
+            (ownedRes.data ?? [])
+              .map((row: any) => {
+                const personaKey = String(row?.persona_key ?? "").trim();
+                if (!personaKey) return null;
+                return [
+                  personaKey,
+                  buildPersonaEvolutionProgress({
+                    personaKey,
+                    score: row?.score,
+                    confidence: row?.confidence,
+                  }),
+                ] as const;
+              })
+              .filter((entry): entry is readonly [string, PersonaEvolutionProgress] => Boolean(entry))
           );
         }
       }
@@ -103,6 +125,9 @@ export default async function PersonasCatalogPage() {
               <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
                 全{items.length}体
               </span>
+              <span className="rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">
+                12体 × 4進化段階 = 48形態
+              </span>
               <Link
                 href="/dashboard/persona"
                 className="rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
@@ -112,7 +137,7 @@ export default async function PersonasCatalogPage() {
             </div>
           </div>
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            12体の恐竜キャラの特徴を見られる場所です。あなた自身の恐竜は、投稿の成長シグナルから育ちます。
+            今いる12体の恐竜が、それぞれ4段階に進化します。投稿ごとのAI判定は恐竜を直接決めるのではなく、あなたの恐竜を育てる成長シグナルとして積み重なります。
           </p>
           {discoveredCount !== null && (
             <p className="mt-2 text-xs text-slate-500">
@@ -169,6 +194,7 @@ export default async function PersonasCatalogPage() {
                     const profile = getPersonaProfile(r.key);
                     const color = getPersonaColorClasses(r.key);
                     const isLocked = ownedPersonaKeys !== null && !ownedPersonaKeys.has(r.key);
+                    const evolution = ownedPersonaEvolution.get(r.key) ?? null;
                     return (
                       <Link
                         key={r.key}
@@ -182,6 +208,7 @@ export default async function PersonasCatalogPage() {
                             <div className="flex h-full flex-col items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 text-slate-500">
                               <AnimatedPersonaImage
                                 personaKey={r.key}
+                                stageKey="discovery"
                                 displayName={profile.displayName}
                                 iconEmoji={profile.iconEmoji}
                                 silhouetteEmoji={profile.silhouetteEmoji}
@@ -196,6 +223,7 @@ export default async function PersonasCatalogPage() {
                             <>
                               <AnimatedPersonaImage
                                 personaKey={r.key}
+                                stageKey="discovery"
                                 displayName={profile.displayName}
                                 iconEmoji={profile.iconEmoji}
                                 silhouetteEmoji={profile.silhouetteEmoji}
@@ -216,7 +244,22 @@ export default async function PersonasCatalogPage() {
                             {profile.displayName}
                           </div>
                           <div className="text-xs font-medium text-blue-700">{profile.title}</div>
-                          <PersonaGameBadges personaKey={r.key} className="mt-2" />
+                          <PersonaGameBadges
+                            personaKey={r.key}
+                            showEvolutionStage={false}
+                            className="mt-2"
+                          />
+                          <div className="mt-2 rounded-xl border border-white/80 bg-white/70 p-2">
+                            <div className="text-[11px] font-semibold text-slate-700">
+                              {evolution ? `現在の進化段階: ${evolution.stage.label}` : "4つの進化段階"}
+                            </div>
+                            <PersonaEvolutionStages
+                              progress={evolution}
+                              preview={!evolution}
+                              compact
+                              className="mt-1.5"
+                            />
+                          </div>
                           <p className="text-sm opacity-80 mt-1 line-clamp-3">
                             {profile.shortSummary}
                           </p>
